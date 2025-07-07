@@ -59,6 +59,16 @@ const userSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  // Premium user status
+  isPremium: {
+    type: Boolean,
+    default: false
+  },
+  // Profile image URL
+  profileImage: {
+    type: String,
+    default: null
   }
 }, { timestamps: true });
 
