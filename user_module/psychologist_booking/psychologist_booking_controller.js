@@ -1152,3 +1152,1304 @@ exports.createBookingWithDetails = async (req, res) => {
     });
   }
 };
+
+// Get psychologist's patient count statistics
+exports.getPsychologistPatientCount = async (req, res) => {
+  try {
+    const psychologistId = req.psychologist.id; // Extracted from JWT by auth middleware
+    console.log(`👥 Getting patient count for psychologist: ${psychologistId}`);
+
+    // Get total unique patients
+    const totalUniquePatients = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      { $group: { _id: '$user' } },
+      { $count: 'totalPatients' }
+    ]);
+
+    // Get patients by booking status
+    const patientsByStatus = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: {
+            user: '$user',
+            status: '$status'
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.status',
+          patientCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get patients by booking method (automatic vs manual)
+    const patientsByMethod = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: {
+            user: '$user',
+            bookingMethod: '$bookingMethod'
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.bookingMethod',
+          patientCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get recent patients (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentPatients = await Booking.aggregate([
+      { 
+        $match: { 
+          psychologist: psychologistId,
+          createdAt: { $gte: thirtyDaysAgo }
+        } 
+      },
+      { $group: { _id: '$user' } },
+      { $count: 'recentPatients' }
+    ]);
+
+    // Convert arrays to objects for easier consumption
+    const statusStats = patientsByStatus.reduce((acc, stat) => {
+      acc[stat._id] = stat.patientCount;
+      return acc;
+    }, {});
+
+    const methodStats = patientsByMethod.reduce((acc, stat) => {
+      acc[stat._id] = stat.patientCount;
+      return acc;
+    }, {});
+
+    const result = {
+      totalUniquePatients: totalUniquePatients[0]?.totalPatients || 0,
+      recentPatients: recentPatients[0]?.recentPatients || 0,
+      patientsByStatus: statusStats,
+      patientsByBookingMethod: methodStats
+    };
+
+    console.log(`✅ Patient count stats retrieved:`, result);
+
+    res.status(200).json({
+      status: true,
+      message: "Patient count statistics retrieved successfully",
+      data: result
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching patient count:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving patient count statistics",
+      error: err.message
+    });
+  }
+};
+
+// Get detailed patient list for psychologist
+exports.getPsychologistPatientList = async (req, res) => {
+  try {
+    const psychologistId = req.psychologist.id;
+    const { status, bookingMethod, limit = 50, page = 1 } = req.query;
+    console.log(`📋 Getting patient list for psychologist: ${psychologistId}`);
+
+    // Build match conditions
+    const matchConditions = { psychologist: psychologistId };
+    if (status) matchConditions.status = status;
+    if (bookingMethod) matchConditions.bookingMethod = bookingMethod;
+
+    // Get unique patients with their latest booking info
+    const patients = await Booking.aggregate([
+      { $match: matchConditions },
+      {
+        $sort: { createdAt: -1 } // Most recent first
+      },
+      {
+        $group: {
+          _id: '$user',
+          latestBooking: { $first: '$$ROOT' },
+          totalBookings: { $sum: 1 },
+          firstBookingDate: { $min: '$createdAt' },
+          lastBookingDate: { $max: '$createdAt' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'userInfo'
+        }
+      },
+      {
+        $unwind: '$userInfo'
+      },
+      {
+        $project: {
+          userId: '$_id',
+          patientName: {
+            $cond: {
+              if: { $eq: ['$latestBooking.bookingMethod', 'manual'] },
+              then: '$latestBooking.patientDetails.patientName',
+              else: '$userInfo.fullName'
+            }
+          },
+          contactNumber: {
+            $cond: {
+              if: { $eq: ['$latestBooking.bookingMethod', 'manual'] },
+              then: '$latestBooking.patientDetails.contactNumber',
+              else: '$userInfo.email'
+            }
+          },
+          totalBookings: 1,
+          firstBookingDate: 1,
+          lastBookingDate: 1,
+          latestBookingStatus: '$latestBooking.status',
+          latestBookingMethod: '$latestBooking.bookingMethod',
+          latestBookingDate: '$latestBooking.date'
+        }
+      },
+      {
+        $sort: { lastBookingDate: -1 }
+      },
+      {
+        $skip: (parseInt(page) - 1) * parseInt(limit)
+      },
+      {
+        $limit: parseInt(limit)
+      }
+    ]);
+
+    // Get total count for pagination
+    const totalPatients = await Booking.aggregate([
+      { $match: matchConditions },
+      { $group: { _id: '$user' } },
+      { $count: 'total' }
+    ]);
+
+    console.log(`✅ Found ${patients.length} patients for psychologist`);
+
+    res.status(200).json({
+      status: true,
+      message: "Patient list retrieved successfully",
+      data: {
+        patients,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil((totalPatients[0]?.total || 0) / parseInt(limit)),
+          totalPatients: totalPatients[0]?.total || 0,
+          limit: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching patient list:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving patient list",
+      error: err.message
+    });
+  }
+};
+
+// Get psychologist's total booking count
+exports.getPsychologistBookingCount = async (req, res) => {
+  try {
+    const psychologistId = req.psychologist.id; // Extracted from JWT by auth middleware
+    console.log(`📊 Getting booking count for psychologist: ${psychologistId}`);
+
+    // Get total bookings count
+    const totalBookings = await Booking.countDocuments({ psychologist: psychologistId });
+
+    // Get bookings by status
+    const bookingsByStatus = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get bookings by booking method
+    const bookingsByMethod = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: '$bookingMethod',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get recent bookings (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      createdAt: { $gte: thirtyDaysAgo }
+    });
+
+    // Get today's bookings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const todayBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: today, $lt: tomorrow }
+    });
+
+    // Get this week's bookings
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const thisWeekBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: startOfWeek }
+    });
+
+    // Get this month's bookings
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const thisMonthBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: startOfMonth }
+    });
+
+    // Convert arrays to objects for easier consumption
+    const statusStats = bookingsByStatus.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const methodStats = bookingsByMethod.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const result = {
+      totalBookings,
+      recentBookings,
+      todayBookings,
+      thisWeekBookings,
+      thisMonthBookings,
+      bookingsByStatus: statusStats,
+      bookingsByBookingMethod: methodStats
+    };
+
+    console.log(`✅ Booking count stats retrieved:`, result);
+
+    res.status(200).json({
+      status: true,
+      message: "Booking count statistics retrieved successfully",
+      data: result
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching booking count:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving booking count statistics",
+      error: err.message
+    });
+  }
+};
+
+// Get booking counts for all psychologists (Admin only)
+exports.getAllPsychologistsBookingCount = async (req, res) => {
+  try {
+    console.log(`📊 Admin: Getting booking counts for all psychologists`);
+
+    // Get all psychologists with their booking counts
+    const psychologistsWithBookings = await Booking.aggregate([
+      {
+        $group: {
+          _id: '$psychologist',
+          totalBookings: { $sum: 1 },
+          pendingBookings: {
+            $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+          },
+          confirmedBookings: {
+            $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] }
+          },
+          completedBookings: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          },
+          cancelledBookings: {
+            $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] }
+          },
+          rescheduledBookings: {
+            $sum: { $cond: [{ $eq: ['$status', 'rescheduled'] }, 1, 0] }
+          },
+          automaticBookings: {
+            $sum: { $cond: [{ $eq: ['$bookingMethod', 'automatic'] }, 1, 0] }
+          },
+          manualBookings: {
+            $sum: { $cond: [{ $eq: ['$bookingMethod', 'manual'] }, 1, 0] }
+          },
+          recentBookings: {
+            $sum: {
+              $cond: [
+                { $gte: ['$createdAt', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)] },
+                1,
+                0
+              ]
+            }
+          },
+          todayBookings: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $gte: ['$date', new Date(new Date().setHours(0, 0, 0, 0))] },
+                    { $lt: ['$date', new Date(new Date().setHours(23, 59, 59, 999))] }
+                  ]
+                },
+                1,
+                0
+              ]
+            }
+          },
+          thisWeekBookings: {
+            $sum: {
+              $cond: [
+                { $gte: ['$date', new Date(new Date().setDate(new Date().getDate() - new Date().getDay()))] },
+                1,
+                0
+              ]
+            }
+          },
+          thisMonthBookings: {
+            $sum: {
+              $cond: [
+                { $gte: ['$date', new Date(new Date().getFullYear(), new Date().getMonth(), 1)] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      {
+        $lookup: {
+          from: 'psychologists',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'psychologistInfo'
+        }
+      },
+      {
+        $unwind: '$psychologistInfo'
+      },
+      {
+        $project: {
+          psychologistId: '$_id',
+          psychologistName: '$psychologistInfo.name',
+          specialization: '$psychologistInfo.specialization',
+          state: '$psychologistInfo.state',
+          clinicName: '$psychologistInfo.clinicName',
+          rating: '$psychologistInfo.rating',
+          experienceYears: '$psychologistInfo.experienceYears',
+          available: '$psychologistInfo.available',
+          totalBookings: 1,
+          pendingBookings: 1,
+          confirmedBookings: 1,
+          completedBookings: 1,
+          cancelledBookings: 1,
+          rescheduledBookings: 1,
+          automaticBookings: 1,
+          manualBookings: 1,
+          recentBookings: 1,
+          todayBookings: 1,
+          thisWeekBookings: 1,
+          thisMonthBookings: 1
+        }
+      },
+      {
+        $sort: { totalBookings: -1 } // Sort by total bookings (highest first)
+      }
+    ]);
+
+    // Get overall statistics
+    const overallStats = await Booking.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalBookings: { $sum: 1 },
+          totalPsychologists: { $addToSet: '$psychologist' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalBookings: 1,
+          totalPsychologists: { $size: '$totalPsychologists' }
+        }
+      }
+    ]);
+
+    // Get bookings by status across all psychologists
+    const overallStatusStats = await Booking.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get bookings by method across all psychologists
+    const overallMethodStats = await Booking.aggregate([
+      {
+        $group: {
+          _id: '$bookingMethod',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Convert arrays to objects
+    const statusStats = overallStatusStats.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const methodStats = overallMethodStats.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const result = {
+      psychologists: psychologistsWithBookings,
+      overallStats: {
+        ...overallStats[0],
+        bookingsByStatus: statusStats,
+        bookingsByMethod: methodStats
+      },
+      summary: {
+        totalPsychologists: psychologistsWithBookings.length,
+        totalBookings: overallStats[0]?.totalBookings || 0,
+        averageBookingsPerPsychologist: overallStats[0]?.totalBookings 
+          ? Math.round((overallStats[0].totalBookings / psychologistsWithBookings.length) * 100) / 100 
+          : 0
+      }
+    };
+
+    console.log(`✅ Admin: Retrieved booking counts for ${psychologistsWithBookings.length} psychologists`);
+
+    res.status(200).json({
+      status: true,
+      message: "All psychologists booking counts retrieved successfully",
+      data: result
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching all psychologists booking counts:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving all psychologists booking counts",
+      error: err.message
+    });
+  }
+};
+
+// Get booking count for a specific psychologist (Admin only)
+exports.getSpecificPsychologistBookingCount = async (req, res) => {
+  try {
+    const { psychologistId } = req.params;
+    console.log(`📊 Admin: Getting booking count for psychologist: ${psychologistId}`);
+
+    // Validate psychologist ID
+    if (!psychologistId) {
+      return res.status(400).json({
+        status: false,
+        message: "Psychologist ID is required"
+      });
+    }
+
+    // Check if psychologist exists
+    const psychologist = await Psychologist.findById(psychologistId);
+    if (!psychologist) {
+      return res.status(404).json({
+        status: false,
+        message: "Psychologist not found"
+      });
+    }
+
+    // Get total bookings count
+    const totalBookings = await Booking.countDocuments({ psychologist: psychologistId });
+
+    // Get bookings by status
+    const bookingsByStatus = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get bookings by booking method
+    const bookingsByMethod = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: '$bookingMethod',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get recent bookings (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      createdAt: { $gte: thirtyDaysAgo }
+    });
+
+    // Get today's bookings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const todayBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: today, $lt: tomorrow }
+    });
+
+    // Get this week's bookings
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const thisWeekBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: startOfWeek }
+    });
+
+    // Get this month's bookings
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const thisMonthBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: startOfMonth }
+    });
+
+    // Convert arrays to objects for easier consumption
+    const statusStats = bookingsByStatus.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const methodStats = bookingsByMethod.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const result = {
+      psychologist: {
+        id: psychologist._id,
+        name: psychologist.name,
+        specialization: psychologist.specialization,
+        state: psychologist.state,
+        clinicName: psychologist.clinicName,
+        rating: psychologist.rating,
+        experienceYears: psychologist.experienceYears,
+        available: psychologist.available
+      },
+      bookingStats: {
+        totalBookings,
+        recentBookings,
+        todayBookings,
+        thisWeekBookings,
+        thisMonthBookings,
+        bookingsByStatus: statusStats,
+        bookingsByBookingMethod: methodStats
+      }
+    };
+
+    console.log(`✅ Admin: Booking count stats retrieved for psychologist: ${psychologist.name}`);
+
+    res.status(200).json({
+      status: true,
+      message: "Psychologist booking count statistics retrieved successfully",
+      data: result
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching specific psychologist booking count:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving psychologist booking count statistics",
+      error: err.message
+    });
+  }
+};
+
+// Get all bookings with details for admin (Admin only)
+exports.getAllBookingsForAdmin = async (req, res) => {
+  try {
+    const { 
+      status, 
+      date, 
+      psychologistId, 
+      userId, 
+      bookingMethod,
+      page = 1, 
+      limit = 20,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      search
+    } = req.query;
+    
+    console.log(`📊 Admin: Getting all bookings with filters:`, req.query);
+
+    // Build filter object
+    const filter = {};
+    
+    // Add status filter if provided
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+    
+    // Add date filter if provided
+    if (date) {
+      filter.date = {
+        $gte: new Date(date + 'T00:00:00.000Z'),
+        $lt: new Date(date + 'T23:59:59.999Z')
+      };
+    }
+
+    // Add psychologist filter if provided
+    if (psychologistId) {
+      filter.psychologist = psychologistId;
+    }
+
+    // Add user filter if provided
+    if (userId) {
+      filter.user = userId;
+    }
+
+    // Add booking method filter if provided
+    if (bookingMethod && bookingMethod !== 'all') {
+      filter.bookingMethod = bookingMethod;
+    }
+
+    // Add search filter if provided
+    if (search) {
+      // Search in user name, psychologist name, or booking ID
+      filter.$or = [
+        { _id: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build sort object
+    const sortObject = {};
+    sortObject[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Get bookings with pagination and population
+    const bookings = await Booking.find(filter)
+      .populate('user', 'fullName email phone')
+      .populate('psychologist', 'name specialization clinicName state image rating experienceYears hourlyRate email phone')
+      .sort(sortObject)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Get total count for pagination
+    const totalBookings = await Booking.countDocuments(filter);
+
+    console.log(`✅ Admin: Found ${bookings.length} bookings (page ${page})`);
+
+    // Add image URL and format the response
+    const baseUrl = req.protocol + "://" + req.get("host");
+    const formattedBookings = bookings.map(booking => ({
+      id: booking._id,
+      date: booking.date,
+      time: booking.time,
+      status: booking.status,
+      bookingType: booking.bookingType,
+      bookingMethod: booking.bookingMethod,
+      patientDetails: booking.patientDetails,
+      user: booking.user,
+      psychologist: booking.psychologist ? {
+        ...booking.psychologist._doc,
+        image: booking.psychologist.image ? `${baseUrl}/uploads/psychologist/${booking.psychologist.image}` : null
+      } : null,
+      rescheduleHistory: booking.rescheduleHistory,
+      cancelledAt: booking.cancelledAt,
+      cancellationReason: booking.cancellationReason,
+      createdAt: booking.createdAt,
+      updatedAt: booking.updatedAt
+    }));
+
+    // Get comprehensive statistics
+    const stats = await Booking.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get booking method statistics
+    const methodStats = await Booking.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$bookingMethod',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get recent bookings (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentBookings = await Booking.countDocuments({
+      ...filter,
+      createdAt: { $gte: thirtyDaysAgo }
+    });
+
+    // Get today's bookings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const todayBookings = await Booking.countDocuments({
+      ...filter,
+      date: { $gte: today, $lt: tomorrow }
+    });
+
+    // Get this week's bookings
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const thisWeekBookings = await Booking.countDocuments({
+      ...filter,
+      date: { $gte: startOfWeek }
+    });
+
+    // Get this month's bookings
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const thisMonthBookings = await Booking.countDocuments({
+      ...filter,
+      date: { $gte: startOfMonth }
+    });
+
+    // Convert arrays to objects
+    const statusStats = stats.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const bookingMethodStats = methodStats.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    // Get unique users and psychologists count
+    const uniqueCounts = await Booking.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          uniqueUsers: { $addToSet: '$user' },
+          uniquePsychologists: { $addToSet: '$psychologist' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          uniqueUsers: { $size: '$uniqueUsers' },
+          uniquePsychologists: { $size: '$uniquePsychologists' }
+        }
+      }
+    ]);
+
+    const result = {
+      bookings: formattedBookings,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalBookings / parseInt(limit)),
+        totalBookings: totalBookings,
+        hasNextPage: skip + bookings.length < totalBookings,
+        hasPrevPage: parseInt(page) > 1,
+        limit: parseInt(limit)
+      },
+      statistics: {
+        totalBookings: totalBookings,
+        recentBookings: recentBookings,
+        todayBookings: todayBookings,
+        thisWeekBookings: thisWeekBookings,
+        thisMonthBookings: thisMonthBookings,
+        uniqueUsers: uniqueCounts[0]?.uniqueUsers || 0,
+        uniquePsychologists: uniqueCounts[0]?.uniquePsychologists || 0,
+        bookingsByStatus: statusStats,
+        bookingsByMethod: bookingMethodStats
+      },
+      filters: {
+        status: status || 'all',
+        date: date || null,
+        psychologistId: psychologistId || null,
+        userId: userId || null,
+        bookingMethod: bookingMethod || 'all',
+        search: search || null
+      },
+      sorting: {
+        sortBy: sortBy,
+        sortOrder: sortOrder
+      }
+    };
+
+    console.log(`✅ Admin: Retrieved ${formattedBookings.length} bookings with comprehensive statistics`);
+
+    res.status(200).json({
+      status: true,
+      message: "All bookings retrieved successfully for admin",
+      data: result
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching all bookings for admin:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving all bookings",
+      error: err.message
+    });
+  }
+};
+
+// Get booking count summary for admin (Admin only)
+exports.getBookingCountSummaryForAdmin = async (req, res) => {
+  try {
+    console.log(`📊 Admin: Getting booking count summary`);
+
+    // Get total bookings count
+    const totalBookings = await Booking.countDocuments();
+
+    // Get bookings by status
+    const bookingsByStatus = await Booking.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get bookings by booking method
+    const bookingsByMethod = await Booking.aggregate([
+      {
+        $group: {
+          _id: '$bookingMethod',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get recent bookings (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentBookings = await Booking.countDocuments({
+      createdAt: { $gte: thirtyDaysAgo }
+    });
+
+    // Get today's bookings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const todayBookings = await Booking.countDocuments({
+      date: { $gte: today, $lt: tomorrow }
+    });
+
+    // Get this week's bookings
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const thisWeekBookings = await Booking.countDocuments({
+      date: { $gte: startOfWeek }
+    });
+
+    // Get this month's bookings
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const thisMonthBookings = await Booking.countDocuments({
+      date: { $gte: startOfMonth }
+    });
+
+    // Get unique users and psychologists count
+    const uniqueCounts = await Booking.aggregate([
+      {
+        $group: {
+          _id: null,
+          uniqueUsers: { $addToSet: '$user' },
+          uniquePsychologists: { $addToSet: '$psychologist' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          uniqueUsers: { $size: '$uniqueUsers' },
+          uniquePsychologists: { $size: '$uniquePsychologists' }
+        }
+      }
+    ]);
+
+    // Get bookings by date (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const dailyBookings = await Booking.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: sevenDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    // Convert arrays to objects
+    const statusStats = bookingsByStatus.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const methodStats = bookingsByMethod.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const result = {
+      summary: {
+        totalBookings: totalBookings,
+        uniqueUsers: uniqueCounts[0]?.uniqueUsers || 0,
+        uniquePsychologists: uniqueCounts[0]?.uniquePsychologists || 0,
+        averageBookingsPerUser: uniqueCounts[0]?.uniqueUsers 
+          ? Math.round((totalBookings / uniqueCounts[0].uniqueUsers) * 100) / 100 
+          : 0,
+        averageBookingsPerPsychologist: uniqueCounts[0]?.uniquePsychologists 
+          ? Math.round((totalBookings / uniqueCounts[0].uniquePsychologists) * 100) / 100 
+          : 0
+      },
+      recentActivity: {
+        recentBookings: recentBookings,
+        todayBookings: todayBookings,
+        thisWeekBookings: thisWeekBookings,
+        thisMonthBookings: thisMonthBookings
+      },
+      breakdown: {
+        bookingsByStatus: statusStats,
+        bookingsByMethod: methodStats
+      },
+      dailyTrend: dailyBookings
+    };
+
+    console.log(`✅ Admin: Retrieved booking count summary`);
+
+    res.status(200).json({
+      status: true,
+      message: "Booking count summary retrieved successfully for admin",
+      data: result
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching booking count summary for admin:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving booking count summary",
+      error: err.message
+    });
+  }
+};
+
+// Get all booking details for a specific psychologist (Admin only)
+exports.getSpecificPsychologistBookings = async (req, res) => {
+  try {
+    const { psychologistId } = req.params;
+    const { 
+      status, 
+      date, 
+      page = 1, 
+      limit = 20,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      search
+    } = req.query;
+    
+    console.log(`📊 Admin: Getting all booking details for psychologist: ${psychologistId}`);
+
+    // Validate psychologist ID
+    if (!psychologistId) {
+      return res.status(400).json({
+        status: false,
+        message: "Psychologist ID is required"
+      });
+    }
+
+    // Check if psychologist exists
+    const psychologist = await Psychologist.findById(psychologistId);
+    if (!psychologist) {
+      return res.status(404).json({
+        status: false,
+        message: "Psychologist not found"
+      });
+    }
+
+    // Build filter object
+    const filter = { psychologist: psychologistId };
+    
+    // Add status filter if provided
+    if (status && status !== 'all') {
+      filter.status = status;
+    }
+    
+    // Add date filter if provided
+    if (date) {
+      filter.date = {
+        $gte: new Date(date + 'T00:00:00.000Z'),
+        $lt: new Date(date + 'T23:59:59.999Z')
+      };
+    }
+
+    // Add search filter if provided
+    if (search) {
+      // Search in user name, booking ID, or patient details
+      filter.$or = [
+        { _id: { $regex: search, $options: 'i' } },
+        { 'patientDetails.patientName': { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build sort object
+    const sortObject = {};
+    sortObject[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Get bookings with pagination and population
+    const bookings = await Booking.find(filter)
+      .populate('user', 'fullName email phone')
+      .sort(sortObject)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Get total count for pagination
+    const totalBookings = await Booking.countDocuments(filter);
+
+    console.log(`✅ Admin: Found ${bookings.length} bookings for psychologist: ${psychologist.name}`);
+
+    // Format the response
+    const formattedBookings = bookings.map(booking => ({
+      id: booking._id,
+      date: booking.date,
+      time: booking.time,
+      status: booking.status,
+      bookingType: booking.bookingType,
+      bookingMethod: booking.bookingMethod,
+      patientDetails: booking.patientDetails,
+      user: booking.user,
+      rescheduleHistory: booking.rescheduleHistory,
+      cancelledAt: booking.cancelledAt,
+      cancellationReason: booking.cancellationReason,
+      createdAt: booking.createdAt,
+      updatedAt: booking.updatedAt
+    }));
+
+    // Get comprehensive statistics for this psychologist
+    const stats = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get booking method statistics
+    const methodStats = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: '$bookingMethod',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get recent bookings (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      createdAt: { $gte: thirtyDaysAgo }
+    });
+
+    // Get today's bookings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const todayBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: today, $lt: tomorrow }
+    });
+
+    // Get this week's bookings
+    const startOfWeek = new Date();
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const thisWeekBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: startOfWeek }
+    });
+
+    // Get this month's bookings
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const thisMonthBookings = await Booking.countDocuments({
+      psychologist: psychologistId,
+      date: { $gte: startOfMonth }
+    });
+
+    // Get unique users count
+    const uniqueUsers = await Booking.aggregate([
+      { $match: { psychologist: psychologistId } },
+      {
+        $group: {
+          _id: '$user'
+        }
+      },
+      {
+        $count: 'uniqueUsers'
+      }
+    ]);
+
+    // Convert arrays to objects for easier consumption
+    const statusStats = stats.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const methodStatsObj = methodStats.reduce((acc, stat) => {
+      acc[stat._id] = stat.count;
+      return acc;
+    }, {});
+
+    const result = {
+      psychologist: {
+        id: psychologist._id,
+        name: psychologist.name,
+        specialization: psychologist.specialization,
+        state: psychologist.state,
+        clinicName: psychologist.clinicName,
+        rating: psychologist.rating,
+        experienceYears: psychologist.experienceYears,
+        hourlyRate: psychologist.hourlyRate,
+        email: psychologist.email,
+        phone: psychologist.phone,
+        available: psychologist.available
+      },
+      bookings: formattedBookings,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalBookings / parseInt(limit)),
+        totalBookings: totalBookings,
+        hasNextPage: skip + bookings.length < totalBookings,
+        hasPrevPage: parseInt(page) > 1,
+        limit: parseInt(limit)
+      },
+      statistics: {
+        totalBookings: totalBookings,
+        recentBookings: recentBookings,
+        todayBookings: todayBookings,
+        thisWeekBookings: thisWeekBookings,
+        thisMonthBookings: thisMonthBookings,
+        uniqueUsers: uniqueUsers[0]?.uniqueUsers || 0,
+        bookingsByStatus: statusStats,
+        bookingsByMethod: methodStatsObj
+      },
+      filters: {
+        status: status || 'all',
+        date: date || null,
+        search: search || null
+      },
+      sorting: {
+        sortBy: sortBy,
+        sortOrder: sortOrder
+      }
+    };
+
+    console.log(`✅ Admin: Retrieved ${formattedBookings.length} bookings for psychologist: ${psychologist.name}`);
+
+    res.status(200).json({
+      status: true,
+      message: "Psychologist booking details retrieved successfully",
+      data: result
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching psychologist booking details:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving psychologist booking details",
+      error: err.message
+    });
+  }
+};
