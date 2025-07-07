@@ -6,7 +6,7 @@ const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const User = require('../model/user.model');
 const userController = require('../controller/user.controller');
-const { addPsychologist } = require('../admin_module/psychologist_adding/psychologist_adding_controller');
+const { addPsychologist, editPsychologist, getPsychologistById, deletePsychologist, forceDeletePsychologist } = require('../admin_module/psychologist_adding/psychologist_adding_controller');
 const { getAllPsychologists } = require('../admin_module/psychologist_listing/psychologist_listing_controller');
 const adminLoginController = require("../admin_module/admin_login/admin_login_controller");
 const bookingController = require('../user_module/psychologist_booking/psychologist_booking_controller');
@@ -50,6 +50,14 @@ router.get('/admin/auth-status', verifyAdmin, adminLoginController.checkAdminAut
 
 // Admin-protected Psychologist Add Route
 router.post('/addpsychologist', verifyToken, uploadWithErrorHandling, addPsychologist);
+
+// Admin-protected Psychologist Edit Routes
+router.get('/admin/psychologist/:id', verifyAdmin, getPsychologistById);
+router.put('/admin/psychologist/:id', verifyAdmin, uploadWithErrorHandling, editPsychologist);
+
+// Admin-protected Psychologist Delete Routes
+router.delete('/admin/psychologist/:id', verifyAdmin, deletePsychologist);
+router.delete('/admin/psychologist/:id/force', verifyAdmin, forceDeletePsychologist);
 
 // Public Psychologist List
 router.get('/allpsychologist', getAllPsychologists);
@@ -138,6 +146,28 @@ router.get('/psychologist/bookings/all', psychologistAuth, bookingController.get
 
 // Get bookings for a specific date for psychologist
 router.get('/psychologist/bookings/date/:date', psychologistAuth, bookingController.getBookingsByDateForPsychologist);
+
+// Get psychologist's total booking count
+router.get('/psychologist/bookings/count', psychologistAuth, bookingController.getPsychologistBookingCount);
+
+// Admin routes for psychologist booking counts
+router.get('/admin/psychologists/bookings/count', verifyAdmin, bookingController.getAllPsychologistsBookingCount);
+router.get('/admin/psychologist/:psychologistId/bookings/count', verifyAdmin, bookingController.getSpecificPsychologistBookingCount);
+
+// Admin route for getting all booking details for a specific psychologist
+router.get('/admin/psychologist/:psychologistId/bookings', verifyAdmin, bookingController.getSpecificPsychologistBookings);
+
+// Admin routes for all bookings and summary
+router.get('/admin/bookings/all', verifyAdmin, bookingController.getAllBookingsForAdmin);
+router.get('/admin/bookings/summary', verifyAdmin, bookingController.getBookingCountSummaryForAdmin);
+
+// Admin routes for user management
+router.get('/admin/users', verifyAdmin, userController.getAllUsers);
+router.get('/admin/users/statistics', verifyAdmin, userController.getUserStatistics);
+router.get('/admin/users/:userId', verifyAdmin, userController.getUserDetails);
+router.put('/admin/users/:userId/status', verifyAdmin, userController.updateUserStatus);
+router.put('/admin/users/:userId/premium', verifyAdmin, userController.updateUserPremiumStatus);
+router.delete('/admin/users/:userId', verifyAdmin, userController.deleteUser);
 
 // Get count of psychologists
 router.get('/psychologistcount', async (req, res) => {
