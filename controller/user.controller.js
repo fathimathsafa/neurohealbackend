@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 const Psychologist = require('../admin_module/psychologist_adding/psychologist_adding_model');
+const BookingModel = require('../user_module/psychologist_booking/psychologist_booking_model');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -280,5 +281,434 @@ exports.checkAuthStatus = async (req, res) => {
   } catch (err) {
     console.error('Check Auth Status Error:', err);
     res.status(500).json({ message: "Server error checking auth status" });
+  }
+};
+
+// ✅ Admin: Get all users with detailed information
+exports.getAllUsers = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search = '',
+      filter = 'all',
+      sortBy = 'recent',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build search query
+    let searchQuery = {};
+    if (search) {
+      searchQuery = {
+        $or: [
+          { fullName: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } }
+        ]
+      };
+    }
+
+    // Build filter query
+    let filterQuery = {};
+    switch (filter) {
+      case 'premium':
+        filterQuery.isPremium = true;
+        break;
+      case 'regular':
+        filterQuery.isPremium = false;
+        break;
+      case 'active':
+        filterQuery.isActive = true;
+        break;
+      case 'inactive':
+        filterQuery.isActive = false;
+        break;
+      default:
+        // 'all' - no additional filter
+        break;
+    }
+
+    // Combine search and filter queries
+    const query = { ...searchQuery, ...filterQuery };
+
+    // Build sort query
+    let sortQuery = {};
+    switch (sortBy) {
+      case 'recent':
+        sortQuery.createdAt = sortOrder === 'desc' ? -1 : 1;
+        break;
+      case 'name':
+        sortQuery.fullName = sortOrder === 'desc' ? -1 : 1;
+        break;
+      case 'email':
+        sortQuery.email = sortOrder === 'desc' ? -1 : 1;
+        break;
+      case 'lastActivity':
+        sortQuery.lastLoginAt = sortOrder === 'desc' ? -1 : 1;
+        break;
+      default:
+        sortQuery.createdAt = -1;
+    }
+
+    // Get users with pagination
+    const users = await UserModel.find(query)
+      .select('-password -refreshToken -otp -otpExpires')
+      .sort(sortQuery)
+      .skip(skip)
+      .limit(limitNum);
+
+    // Get total count for pagination
+    const totalUsers = await UserModel.countDocuments(query);
+
+    // Get booking counts for each user
+    const usersWithBookings = await Promise.all(
+      users.map(async (user) => {
+        const bookingCount = await BookingModel.countDocuments({ user: user._id });
+        return {
+          id: user._id,
+          name: user.fullName,
+          email: user.email,
+          phone: user.phone,
+          isPremium: user.isPremium,
+          registeredDate: user.createdAt,
+          totalBookings: bookingCount,
+          status: user.isActive ? 'active' : 'inactive',
+          lastActivity: user.lastLoginAt || user.createdAt,
+          profileImage: user.profileImage,
+          hasCompletedQuestionnaire: user.hasCompletedQuestionnaire,
+          preferredState: user.preferredState,
+          preferredSpecialization: user.preferredSpecialization,
+          isFirstTimeUser: user.isFirstTimeUser
+        };
+      })
+    );
+
+    // Calculate statistics
+    const totalCount = await UserModel.countDocuments();
+    const premiumCount = await UserModel.countDocuments({ isPremium: true });
+    const activeCount = await UserModel.countDocuments({ isActive: true });
+    const totalBookings = await BookingModel.countDocuments();
+
+    const statistics = {
+      totalUsers: totalCount,
+      premiumUsers: premiumCount,
+      activeUsers: activeCount,
+      totalBookings: totalBookings
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Users retrieved successfully',
+      data: {
+        users: usersWithBookings,
+        pagination: {
+          currentPage: pageNum,
+          totalPages: Math.ceil(totalUsers / limitNum),
+          totalUsers: totalUsers,
+          hasNextPage: pageNum < Math.ceil(totalUsers / limitNum),
+          hasPrevPage: pageNum > 1
+        },
+        statistics
+      }
+    });
+
+  } catch (error) {
+    console.error('Get All Users Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving users',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Admin: Get user statistics only
+exports.getUserStatistics = async (req, res) => {
+  try {
+    const totalUsers = await UserModel.countDocuments();
+    const premiumUsers = await UserModel.countDocuments({ isPremium: true });
+    const activeUsers = await UserModel.countDocuments({ isActive: true });
+    const totalBookings = await BookingModel.countDocuments();
+
+    // Additional statistics
+    const newUsersThisMonth = await UserModel.countDocuments({
+      createdAt: { $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) }
+    });
+
+    const inactiveUsers = await UserModel.countDocuments({ isActive: false });
+
+    res.status(200).json({
+      success: true,
+      message: 'User statistics retrieved successfully',
+      data: {
+        totalUsers,
+        premiumUsers,
+        activeUsers,
+        inactiveUsers,
+        totalBookings,
+        newUsersThisMonth
+      }
+    });
+
+  } catch (error) {
+    console.error('Get User Statistics Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving user statistics',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Admin: Get single user details with bookings
+exports.getUserDetails = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    const user = await UserModel.findById(userId)
+      .select('-password -refreshToken -otp -otpExpires');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get user's bookings
+    const bookings = await BookingModel.find({ user: userId })
+      .populate('psychologist', 'name email specialization')
+      .sort({ createdAt: -1 });
+
+    // Get booking statistics
+    const totalBookings = bookings.length;
+    const completedBookings = bookings.filter(b => b.status === 'completed').length;
+    const pendingBookings = bookings.filter(b => b.status === 'pending').length;
+    const cancelledBookings = bookings.filter(b => b.status === 'cancelled').length;
+
+    const userDetails = {
+      id: user._id,
+      name: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      isPremium: user.isPremium,
+      registeredDate: user.createdAt,
+      status: user.isActive ? 'active' : 'inactive',
+      lastActivity: user.lastLoginAt || user.createdAt,
+      profileImage: user.profileImage,
+      hasCompletedQuestionnaire: user.hasCompletedQuestionnaire,
+      preferredState: user.preferredState,
+      preferredSpecialization: user.preferredSpecialization,
+      isFirstTimeUser: user.isFirstTimeUser,
+      bookings: {
+        total: totalBookings,
+        completed: completedBookings,
+        pending: pendingBookings,
+        cancelled: cancelledBookings,
+        history: bookings.map(booking => ({
+          id: booking._id,
+          date: booking.date,
+          time: booking.time,
+          status: booking.status,
+          psychologist: booking.psychologist,
+          bookingType: booking.bookingType,
+          bookingMethod: booking.bookingMethod
+        }))
+      }
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'User details retrieved successfully',
+      data: userDetails
+    });
+
+  } catch (error) {
+    console.error('Get User Details Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving user details',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Admin: Update user status (activate/deactivate)
+exports.updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isActive } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'isActive must be a boolean value'
+      });
+    }
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { isActive },
+      { new: true }
+    ).select('-password -refreshToken -otp -otpExpires');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
+      data: {
+        id: user._id,
+        name: user.fullName,
+        email: user.email,
+        status: user.isActive ? 'active' : 'inactive'
+      }
+    });
+
+  } catch (error) {
+    console.error('Update User Status Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user status',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Admin: Update user premium status
+exports.updateUserPremiumStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isPremium } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    if (typeof isPremium !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'isPremium must be a boolean value'
+      });
+    }
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { isPremium },
+      { new: true }
+    ).select('-password -refreshToken -otp -otpExpires');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `User premium status ${isPremium ? 'enabled' : 'disabled'} successfully`,
+      data: {
+        id: user._id,
+        name: user.fullName,
+        email: user.email,
+        isPremium: user.isPremium
+      }
+    });
+
+  } catch (error) {
+    console.error('Update User Premium Status Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating user premium status',
+      error: error.message
+    });
+  }
+};
+
+// ✅ Admin: Delete user (with booking check)
+exports.deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { force = false } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+
+    // Check if user exists
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check for active bookings
+    const activeBookings = await BookingModel.countDocuments({
+      user: userId,
+      status: { $in: ['pending', 'confirmed'] }
+    });
+
+    if (activeBookings > 0 && !force) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete user. User has ${activeBookings} active booking(s). Use force=true to delete anyway.`,
+        activeBookings
+      });
+    }
+
+    // Delete user and all related bookings
+    await UserModel.findByIdAndDelete(userId);
+    
+    if (force) {
+      await BookingModel.deleteMany({ user: userId });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'User deleted successfully',
+      data: {
+        deletedUser: user.fullName,
+        deletedBookings: force ? activeBookings : 0
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete User Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting user',
+      error: error.message
+    });
   }
 };
