@@ -135,6 +135,9 @@ router.post('/psychologistlogin', psychologistLoginController.psychologistLogin)
 router.post('/psychologist/logout', psychologistAuth, psychologistLoginController.psychologistLogout);
 router.get('/psychologist/auth-status', psychologistAuth, psychologistLoginController.checkPsychologistAuthStatus);
 
+// Psychologist Profile Route
+router.get('/psychologist/profile', psychologistAuth, psychologistLoginController.getPsychologistProfile);
+
 // Get bookings for psychologist
 router.get('/psychologist/bookings', psychologistAuth, bookingController.getBookingsForPsychologist);
 

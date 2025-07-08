@@ -133,3 +133,73 @@ exports.checkPsychologistAuthStatus = async (req, res) => {
     });
   }
 };
+
+// ✅ Get Psychologist Profile (for psychologist's own profile screen)
+exports.getPsychologistProfile = async (req, res) => {
+  try {
+    const psychologistId = req.psychologist?.id;
+    
+    if (!psychologistId) {
+      return res.status(401).json({ 
+        status: false, 
+        message: "Psychologist not authenticated" 
+      });
+    }
+
+    // Get psychologist details from database
+    const psychologist = await Psychologist.findById(psychologistId);
+    
+    if (!psychologist) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Psychologist not found" 
+      });
+    }
+
+    // Prepare response with image URL
+    const baseUrl = req.protocol + "://" + req.get("host");
+    const responseData = {
+      id: psychologist._id,
+      name: psychologist.name,
+      username: psychologist.username,
+      gender: psychologist.gender,
+      email: psychologist.email,
+      phone: psychologist.phone,
+      specialization: psychologist.specialization,
+      experienceYears: psychologist.experienceYears,
+      qualifications: psychologist.qualifications,
+      hourlyRate: psychologist.hourlyRate,
+      rating: psychologist.rating,
+      available: psychologist.available,
+      clinicName: psychologist.clinicName,
+      state: psychologist.state,
+      workingDays: psychologist.workingDays,
+      workingHours: psychologist.workingHours,
+      sessionDuration: psychologist.sessionDuration,
+      breakTime: psychologist.breakTime,
+      lastLoginAt: psychologist.lastLoginAt,
+      lastLogoutAt: psychologist.lastLogoutAt,
+      isActive: psychologist.isActive,
+      createdAt: psychologist.createdAt,
+      updatedAt: psychologist.updatedAt,
+      // Add image URL if image exists
+      image: psychologist.image ? `${baseUrl}/uploads/psychologist/${psychologist.image}` : null
+    };
+
+    console.log('✅ Psychologist profile retrieved successfully');
+
+    res.status(200).json({
+      status: true,
+      message: "Psychologist profile retrieved successfully",
+      psychologist: responseData
+    });
+
+  } catch (err) {
+    console.error('❌ Get Psychologist Profile Error:', err);
+    res.status(500).json({ 
+      status: false, 
+      message: "Server error retrieving psychologist profile",
+      error: err.message
+    });
+  }
+};
