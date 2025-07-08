@@ -6,6 +6,7 @@ const path = require('path'); // ✅ Add this line
 const cors = require('cors');
 const body_parser = require('body-parser');
 const userRouter = require('./routers/user.routes');
+const messageRouter = require('./routers/message.routes');
 //const { getAllPsychologists } = require('./admin_module/psychologist_listing/psychologist_listing_controller');
 
 const app = express();
@@ -26,6 +27,14 @@ app.use((req, res, next) => {
 // Serve uploaded images
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Create uploads/messages directory if it doesn't exist
+const fs = require('fs');
+const messagesUploadDir = path.join(__dirname, 'uploads', 'messages');
+if (!fs.existsSync(messagesUploadDir)) {
+  fs.mkdirSync(messagesUploadDir, { recursive: true });
+  console.log('✅ Created uploads/messages directory');
+}
+
 // Raw request logger (only for non-multipart requests)
 // app.use((req, res, next) => {
 //   if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
@@ -42,6 +51,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Main routes
 app.use('/', userRouter);
+app.use('/messages', messageRouter);
 
 // 🛑 404 fallback route
 app.use((req, res, next) => {
@@ -67,7 +77,7 @@ app.use((err, req, res, next) => {
   if (err instanceof require('multer').MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({ 
-        message: 'File too large. Max size is 2MB.',
+        message: 'File too large. Max size is 10MB.',
         error: err.message 
       });
     }

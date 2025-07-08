@@ -16,8 +16,8 @@ const verifyToken = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     
     // Attach based on role
-    if (decoded.role === "doctor") {
-      req.doctor = decoded;
+    if (decoded.role === "psychologist") {
+      req.user = decoded;
     } else {
       req.user = decoded;
     }
