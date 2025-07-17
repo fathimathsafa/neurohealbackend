@@ -93,6 +93,8 @@ class PsychologistMatchingService {
       const bookingDate = new Date(nextSlot.date + 'T' + selectedSlot.startTime + ':00');
       
       console.log(`📅 Selected slot: ${nextSlot.date} at ${selectedSlot.startTime}`);
+      console.log(`🕐 Booking date/time: ${bookingDate.toISOString()}`);
+      console.log(`📋 Total available slots: ${nextSlot.slots.length}`);
       
       const newBooking = new Booking({
         user: userId,

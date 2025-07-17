@@ -12,6 +12,23 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
   phone: { type: String, trim: true },
+  // New registration fields
+  state: { 
+    type: String, 
+    trim: true,
+    required: true 
+  },
+  gender: { 
+    type: String, 
+    trim: true,
+    required: true 
+  },
+  age: { 
+    type: Number, 
+    min: 13, 
+    max: 120,
+    required: true 
+  },
   password: { type: String },
   otp: { type: String },
   otpExpires: { type: Date },
@@ -35,6 +52,10 @@ const userSchema = new mongoose.Schema({
     default: true
   },
   hasCompletedQuestionnaire: {
+    type: Boolean,
+    default: false
+  },
+  hasHadAutomaticBooking: {
     type: Boolean,
     default: false
   },
@@ -68,6 +89,12 @@ const userSchema = new mongoose.Schema({
   // Profile image URL
   profileImage: {
     type: String,
+    default: null
+  },
+  // Who recommended this app
+  recommendedBy: {
+    type: String,
+    enum: ['Friend', 'Family', 'Doctor', 'Social Media', 'Search Engine', 'Advertisement', 'Other'],
     default: null
   }
 }, { timestamps: true });
