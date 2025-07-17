@@ -1,6 +1,7 @@
 const Booking = require('./psychologist_booking_model');
 const Psychologist = require('../../admin_module/psychologist_adding/psychologist_adding_model');
 const TimeSlotService = require('../../services/time_slot_service');
+const BookingStatusService = require('../../services/booking_status_service');
 
 exports.createBooking = async (req, res) => {
   try {
@@ -39,32 +40,78 @@ exports.createBooking = async (req, res) => {
   
 };
 
-// Get user's booking details
+// Get user's booking details with automatic status calculation
 exports.getUserBookings = async (req, res) => {
   try {
     const userId = req.user.id; // Extracted from JWT middleware
     console.log(`📋 Getting bookings for user: ${userId}`);
 
-    const bookings = await Booking.find({ user: userId })
-      .populate('psychologist', 'name specialization clinicName state image rating experienceYears hourlyRate email phone')
-      .sort({ createdAt: -1 }); // Most recent first
+    // First, update all booking statuses for this user based on current date/time
+    await updateUserBookingStatuses(userId);
+
+    // Get bookings with calculated status
+    const bookings = await BookingStatusService.getBookingsWithCalculatedStatus(userId);
 
     console.log(`✅ Found ${bookings.length} bookings for user`);
+    
+    // Debug: Log first booking to see structure
+    if (bookings.length > 0) {
+      console.log('🔍 First booking structure:', JSON.stringify(bookings[0], null, 2));
+    }
 
     // Add image URL to each booking
     const baseUrl = req.protocol + "://" + req.get("host");
-    const bookingsWithImages = bookings.map(booking => ({
-      ...booking._doc,
-      psychologist: {
-        ...booking.psychologist._doc,
-        image: `${baseUrl}/uploads/psychologist/${booking.psychologist.image}`
+    const bookingsWithImages = bookings.map(booking => {
+      // Debug: Check if psychologist data exists
+      if (!booking.psychologist) {
+        console.log('⚠️ Warning: Booking', booking._id, 'has no psychologist data');
       }
-    }));
+      
+      return {
+        ...booking,  // Use booking directly instead of booking._doc
+        psychologist: booking.psychologist ? {
+          ...booking.psychologist,
+          image: booking.psychologist.image ? `${baseUrl}/uploads/psychologist/${booking.psychologist.image}` : null
+        } : null
+      };
+    });
+
+    // Debug: Log calculated statuses
+    console.log('🔍 Calculated statuses:', bookingsWithImages.map(b => ({
+      id: b._id,
+      date: b.date,
+      time: b.time,
+      status: b.status,
+      calculatedStatus: b.calculatedStatus,
+      hasPsychologist: !!b.psychologist,
+      psychologistId: b.psychologist?._id || 'null'
+    })));
+
+    // Group bookings by calculated status
+    const groupedBookings = {
+      pending: bookingsWithImages.filter(b => b.calculatedStatus === 'pending'),
+      upcoming: bookingsWithImages.filter(b => b.calculatedStatus === 'upcoming'),
+      completed: bookingsWithImages.filter(b => b.calculatedStatus === 'completed'),
+      confirmed: bookingsWithImages.filter(b => b.calculatedStatus === 'confirmed'),
+      cancelled: bookingsWithImages.filter(b => b.calculatedStatus === 'cancelled'),
+      rescheduled: bookingsWithImages.filter(b => b.calculatedStatus === 'rescheduled')
+    };
+
+    // Debug: Log grouped counts
+    console.log('🔍 Grouped booking counts:', {
+      pending: groupedBookings.pending.length,
+      upcoming: groupedBookings.upcoming.length,
+      completed: groupedBookings.completed.length,
+      confirmed: groupedBookings.confirmed.length,
+      cancelled: groupedBookings.cancelled.length,
+      rescheduled: groupedBookings.rescheduled.length
+    });
 
     res.status(200).json({
       status: true,
       message: "Bookings retrieved successfully",
       bookings: bookingsWithImages,
+      groupedBookings,
       totalBookings: bookings.length
     });
 
@@ -77,6 +124,108 @@ exports.getUserBookings = async (req, res) => {
     });
   }
 };
+
+// Helper function to update booking statuses for a specific user
+async function updateUserBookingStatuses(userId) {
+  try {
+    console.log(`🔄 Updating booking statuses for user: ${userId}`);
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    // Get current time in HH:MM format
+    const currentTime = now.toTimeString().slice(0, 5);
+    
+    console.log(`📅 Current date: ${today.toISOString().split('T')[0]}`);
+    console.log(`⏰ Current time: ${currentTime}`);
+    
+    // Debug: Check raw booking data first
+    const rawBookings = await Booking.find({ user: userId }).select('date time status');
+    console.log('🔍 Raw booking data from DB:', rawBookings.map(b => ({
+      id: b._id,
+      date: b.date,
+      time: b.time,
+      status: b.status
+    })));
+    
+    // Update past bookings to completed
+    const pastBookings = await Booking.updateMany(
+      {
+        user: userId,
+        date: { $lt: today },
+        status: { $in: ['pending', 'confirmed', 'rescheduled'] }
+      },
+      {
+        $set: { status: 'completed' }
+      }
+    );
+    
+    // Update tomorrow's bookings to upcoming
+    const upcomingBookings = await Booking.updateMany(
+      {
+        user: userId,
+        date: {
+          $gte: tomorrow,
+          $lt: new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)
+        },
+        status: { $in: ['pending', 'confirmed', 'rescheduled'] }
+      },
+      {
+        $set: { status: 'upcoming' }
+      }
+    );
+    
+    // Update today's bookings based on time
+    const todayBookingsPastTime = await Booking.updateMany(
+      {
+        user: userId,
+        date: {
+          $gte: today,
+          $lt: tomorrow
+        },
+        time: { $lt: currentTime },
+        status: { $in: ['pending', 'confirmed', 'rescheduled'] }
+      },
+      {
+        $set: { status: 'completed' }
+      }
+    );
+    
+    const todayBookingsFutureTime = await Booking.updateMany(
+      {
+        user: userId,
+        date: {
+          $gte: today,
+          $lt: tomorrow
+        },
+        time: { $gte: currentTime },
+        status: { $in: ['upcoming', 'confirmed', 'rescheduled'] }
+      },
+      {
+        $set: { status: 'pending' }
+      }
+    );
+    
+    console.log(`✅ Status updates completed for user ${userId}:`);
+    console.log(`   - Past bookings marked as completed: ${pastBookings.modifiedCount}`);
+    console.log(`   - Tomorrow's bookings marked as upcoming: ${upcomingBookings.modifiedCount}`);
+    console.log(`   - Today's past time bookings marked as completed: ${todayBookingsPastTime.modifiedCount}`);
+    console.log(`   - Today's future time bookings marked as pending: ${todayBookingsFutureTime.modifiedCount}`);
+    
+    return {
+      pastBookings: pastBookings.modifiedCount,
+      upcomingBookings: upcomingBookings.modifiedCount,
+      todayCompleted: todayBookingsPastTime.modifiedCount,
+      todayPending: todayBookingsFutureTime.modifiedCount
+    };
+    
+  } catch (error) {
+    console.error('❌ Error updating user booking statuses:', error);
+    throw error;
+  }
+}
 
 // Get specific booking by ID
 exports.getBookingById = async (req, res) => {
@@ -582,14 +731,22 @@ exports.cancelBooking = async (req, res) => {
     // Find the booking and verify ownership
     const booking = await Booking.findOne({ 
       _id: bookingId, 
-      user: userId,
-      status: { $in: ['pending', 'confirmed', 'rescheduled'] } // Allow cancellation of active bookings
+      user: userId
     }).populate('psychologist');
 
     if (!booking) {
       return res.status(404).json({
         status: false,
-        message: "Booking not found or cannot be cancelled"
+        message: "Booking not found"
+      });
+    }
+
+    // Check if booking can be cancelled
+    const cancellableStatuses = ['pending', 'confirmed', 'rescheduled', 'upcoming'];
+    if (!cancellableStatuses.includes(booking.status)) {
+      return res.status(400).json({
+        status: false,
+        message: `Cannot cancel booking with status '${booking.status}'. Only ${cancellableStatuses.join(', ')} bookings can be cancelled.`
       });
     }
 
@@ -2449,6 +2606,144 @@ exports.getSpecificPsychologistBookings = async (req, res) => {
     res.status(500).json({
       status: false,
       message: "Error retrieving psychologist booking details",
+      error: err.message
+    });
+  }
+};
+
+// Update all booking statuses automatically (Admin/System endpoint)
+exports.updateAllBookingStatuses = async (req, res) => {
+  try {
+    console.log('🔄 Manual trigger for booking status update');
+    
+    const result = await BookingStatusService.updateBookingStatuses();
+    
+    res.status(200).json({
+      status: true,
+      message: "Booking statuses updated successfully",
+      result
+    });
+    
+  } catch (err) {
+    console.error("❌ Error updating booking statuses:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error updating booking statuses",
+      error: err.message
+    });
+  }
+};
+
+// Get bookings with calculated status for psychologist
+exports.getBookingsWithCalculatedStatusForPsychologist = async (req, res) => {
+  try {
+    const psychologistId = req.psychologist.id;
+    console.log(`📋 Getting bookings with calculated status for psychologist: ${psychologistId}`);
+
+    // Get bookings with calculated status
+    const bookings = await BookingStatusService.getBookingsWithCalculatedStatus(null, psychologistId);
+
+    console.log(`✅ Found ${bookings.length} bookings for psychologist`);
+
+    // Group bookings by calculated status
+    const groupedBookings = {
+      pending: bookings.filter(b => b.calculatedStatus === 'pending'),
+      upcoming: bookings.filter(b => b.calculatedStatus === 'upcoming'),
+      completed: bookings.filter(b => b.calculatedStatus === 'completed'),
+      confirmed: bookings.filter(b => b.calculatedStatus === 'confirmed'),
+      cancelled: bookings.filter(b => b.calculatedStatus === 'cancelled'),
+      rescheduled: bookings.filter(b => b.calculatedStatus === 'rescheduled')
+    };
+
+    res.status(200).json({
+      status: true,
+      message: "Bookings retrieved successfully",
+      bookings,
+      groupedBookings,
+      totalBookings: bookings.length
+    });
+
+  } catch (err) {
+    console.error("❌ Error fetching psychologist bookings:", err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving bookings",
+      error: err.message
+    });
+  }
+};
+
+// Get bookings by calculated status for user
+exports.getUserBookingsByStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { status } = req.params; // 'pending', 'upcoming', 'completed', etc.
+    
+    console.log(`📋 Getting ${status} bookings for user: ${userId}`);
+
+    // Get bookings with calculated status
+    const allBookings = await BookingStatusService.getBookingsWithCalculatedStatus(userId);
+    
+    // Filter by calculated status
+    const filteredBookings = allBookings.filter(booking => booking.calculatedStatus === status);
+
+    // Add image URL to each booking
+    const baseUrl = req.protocol + "://" + req.get("host");
+    const bookingsWithImages = filteredBookings.map(booking => ({
+      ...booking._doc,
+      psychologist: {
+        ...booking.psychologist._doc,
+        image: `${baseUrl}/uploads/psychologist/${booking.psychologist.image}`
+      }
+    }));
+
+    console.log(`✅ Found ${bookingsWithImages.length} ${status} bookings`);
+
+    res.status(200).json({
+      status: true,
+      message: `${status} bookings retrieved successfully`,
+      bookings: bookingsWithImages,
+      totalBookings: bookingsWithImages.length
+    });
+
+  } catch (err) {
+    console.error(`❌ Error fetching ${req.params.status} bookings:`, err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving bookings",
+      error: err.message
+    });
+  }
+};
+
+// Get bookings by calculated status for psychologist
+exports.getPsychologistBookingsByStatus = async (req, res) => {
+  try {
+    const psychologistId = req.psychologist.id;
+    const { status } = req.params; // 'pending', 'upcoming', 'completed', etc.
+    
+    console.log(`📋 Getting ${status} bookings for psychologist: ${psychologistId}`);
+
+    // Get bookings with calculated status
+    const allBookings = await BookingStatusService.getBookingsWithCalculatedStatus(null, psychologistId);
+    
+    // Filter by calculated status
+    const filteredBookings = allBookings.filter(booking => booking.calculatedStatus === status);
+
+    console.log(`✅ Found ${filteredBookings.length} ${status} bookings`);
+
+    res.status(200).json({
+      status: true,
+      message: `${status} bookings retrieved successfully`,
+      bookings: filteredBookings,
+      totalBookings: filteredBookings.length
+    });
+
+  } catch (err) {
+    console.error(`❌ Error fetching ${req.params.status} bookings:`, err);
+    res.status(500).json({
+      status: false,
+      message: "Error retrieving bookings",
       error: err.message
     });
   }

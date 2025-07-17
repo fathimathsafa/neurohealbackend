@@ -152,20 +152,42 @@ class TimeSlotService {
    */
   static async getNextAvailableSlot(psychologistId) {
     try {
+      const now = new Date();
+      const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+      const today = now.toISOString().split('T')[0];
+      
+      console.log(`🕐 Current time: ${currentTime}, Today: ${today}`);
+      
       for (let i = 0; i < 14; i++) { // Check next 14 days
         const date = new Date();
         date.setDate(date.getDate() + i);
         const dateString = date.toISOString().split('T')[0];
         
         const availableSlots = await this.getAvailableSlots(psychologistId, dateString);
+        
         if (availableSlots.length > 0) {
-          return {
-            date: dateString,
-            slots: availableSlots
-          };
+          // If it's today, filter out past time slots
+          if (dateString === today) {
+            const futureSlots = availableSlots.filter(slot => slot.startTime > currentTime);
+            if (futureSlots.length > 0) {
+              console.log(`✅ Found ${futureSlots.length} future slots today at: ${futureSlots[0].startTime}`);
+              return {
+                date: dateString,
+                slots: futureSlots
+              };
+            }
+          } else {
+            // For future dates, return all available slots
+            console.log(`✅ Found ${availableSlots.length} slots for ${dateString} at: ${availableSlots[0].startTime}`);
+            return {
+              date: dateString,
+              slots: availableSlots
+            };
+          }
         }
       }
       
+      console.log(`❌ No available slots found in next 14 days`);
       return null; // No available slots in next 14 days
       
     } catch (error) {

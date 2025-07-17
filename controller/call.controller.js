@@ -2,6 +2,7 @@ const Call = require('../model/call.model');
 const Booking = require('../user_module/psychologist_booking/psychologist_booking_model');
 const User = require('../model/user.model');
 const Psychologist = require('../admin_module/psychologist_adding/psychologist_adding_model');
+const socketService = require('../services/socket.service');
 const { v4: uuidv4 } = require('uuid');
 
 // Initiate a call
@@ -90,7 +91,7 @@ exports.initiateCall = async (req, res) => {
       bookingId,
       callType,
       roomId: uuidv4(),
-      status: 'initiated'
+      status: 'ringing' // Changed from 'initiated' to 'ringing'
     };
 
     const call = new Call(callData);
@@ -100,7 +101,35 @@ exports.initiateCall = async (req, res) => {
     await savedCall.populate('caller', 'fullName name email');
     await savedCall.populate('receiver', 'fullName name email');
 
+    // 🔔 NOTIFY RECEIVER ABOUT INCOMING CALL
+    const incomingCallData = {
+      callId: savedCall._id,
+      roomId: savedCall.roomId,
+      callType: savedCall.callType,
+      bookingId: savedCall.bookingId,
+      caller: {
+        id: savedCall.caller._id,
+        name: savedCall.caller.fullName || savedCall.caller.name,
+        email: savedCall.caller.email,
+        type: callerType
+      },
+      receiver: {
+        id: savedCall.receiver._id,
+        name: savedCall.receiver.fullName || savedCall.receiver.name,
+        email: savedCall.receiver.email,
+        type: receiverType
+      },
+      timestamp: new Date()
+    };
+
+    // Send notification to receiver via Socket.IO
+    socketService.sendNotificationToUser(receiverId, 'incoming_call', incomingCallData);
+
+    // Also notify the booking room
+    socketService.sendNotificationToBooking(bookingId, 'call_initiated', incomingCallData);
+
     console.log(`✅ Call initiated: ${callerType} ${callerId} to ${receiverType} ${receiverId}`);
+    console.log(`🔔 Incoming call notification sent to receiver ${receiverId}`);
 
     res.status(201).json({
       status: true,
@@ -163,7 +192,29 @@ exports.answerCall = async (req, res) => {
     call.startTime = new Date();
     await call.save();
 
+    // 🔔 NOTIFY CALLER THAT CALL WAS ANSWERED
+    const callAnsweredData = {
+      callId: call._id,
+      roomId: call.roomId,
+      callType: call.callType,
+      bookingId: call.bookingId,
+      status: call.status,
+      startTime: call.startTime,
+      answeredBy: {
+        id: userId,
+        type: req.user.role === 'psychologist' ? 'Psychologist' : 'User'
+      },
+      timestamp: new Date()
+    };
+
+    // Send notification to caller via Socket.IO
+    socketService.sendNotificationToUser(call.caller.toString(), 'call_answered', callAnsweredData);
+
+    // Also notify the booking room
+    socketService.sendNotificationToBooking(call.bookingId.toString(), 'call_answered', callAnsweredData);
+
     console.log(`✅ Call ${callId} answered by user ${userId}`);
+    console.log(`🔔 Call answered notification sent to caller ${call.caller}`);
 
     res.status(200).json({
       status: true,
@@ -226,7 +277,29 @@ exports.declineCall = async (req, res) => {
     }
     await call.save();
 
+    // 🔔 NOTIFY CALLER THAT CALL WAS DECLINED
+    const callDeclinedData = {
+      callId: call._id,
+      roomId: call.roomId,
+      callType: call.callType,
+      bookingId: call.bookingId,
+      status: call.status,
+      notes: call.notes,
+      declinedBy: {
+        id: userId,
+        type: req.user.role === 'psychologist' ? 'Psychologist' : 'User'
+      },
+      timestamp: new Date()
+    };
+
+    // Send notification to caller via Socket.IO
+    socketService.sendNotificationToUser(call.caller.toString(), 'call_declined', callDeclinedData);
+
+    // Also notify the booking room
+    socketService.sendNotificationToBooking(call.bookingId.toString(), 'call_declined', callDeclinedData);
+
     console.log(`✅ Call ${callId} declined by user ${userId}`);
+    console.log(`🔔 Call declined notification sent to caller ${call.caller}`);
 
     res.status(200).json({
       status: true,
@@ -292,7 +365,35 @@ exports.endCall = async (req, res) => {
     }
     await call.save();
 
+    // 🔔 NOTIFY OTHER PARTICIPANT THAT CALL ENDED
+    const callEndedData = {
+      callId: call._id,
+      roomId: call.roomId,
+      callType: call.callType,
+      bookingId: call.bookingId,
+      status: call.status,
+      duration: call.duration,
+      durationMinutes: call.durationMinutes,
+      notes: call.notes,
+      quality: call.quality,
+      endedBy: {
+        id: userId,
+        type: req.user.role === 'psychologist' ? 'Psychologist' : 'User'
+      },
+      timestamp: new Date()
+    };
+
+    // Send notification to the other participant
+    const otherParticipantId = call.caller.toString() === userId ? 
+      call.receiver.toString() : call.caller.toString();
+    
+    socketService.sendNotificationToUser(otherParticipantId, 'call_ended', callEndedData);
+
+    // Also notify the booking room
+    socketService.sendNotificationToBooking(call.bookingId.toString(), 'call_ended', callEndedData);
+
     console.log(`✅ Call ${callId} ended by user ${userId}`);
+    console.log(`🔔 Call ended notification sent to other participant ${otherParticipantId}`);
 
     res.status(200).json({
       status: true,

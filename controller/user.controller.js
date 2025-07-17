@@ -23,9 +23,9 @@ const transporter = nodemailer.createTransport({
 
 // ✅ Step 1: Pre-register (send OTP)
 exports.preRegister = async (req, res) => {
-  const { fullName, email, phone, password, confirmPassword } = req.body;
+  const { fullName, email, phone, password, confirmPassword, state, gender, age } = req.body;
 
-  if (!fullName || !email || !phone || !password || !confirmPassword)
+  if (!fullName || !email || !phone || !password || !confirmPassword || !state || !gender || !age)
     return res.status(400).json({ message: "All fields are required" });
 
   if (!email.includes('@'))
@@ -36,6 +36,11 @@ exports.preRegister = async (req, res) => {
 
   if (password !== confirmPassword)
     return res.status(400).json({ message: "Passwords do not match" });
+
+  // Validate age
+  const ageNum = parseInt(age);
+  if (isNaN(ageNum) || ageNum < 13 || ageNum > 120)
+    return res.status(400).json({ message: "Age must be between 13 and 120 years" });
 
   try {
     const user = await UserModel.findOne({ email });
@@ -48,7 +53,7 @@ exports.preRegister = async (req, res) => {
     otpStore[email] = {
       otp,
       otpExpires,
-      userData: { fullName, email, phone, password }
+      userData: { fullName, email, phone, password, state, gender, age: ageNum }
     };
 
     await transporter.sendMail({
@@ -86,13 +91,16 @@ exports.register = async (req, res) => {
     if (existingUser && existingUser.password)
       return res.status(400).json({ message: "User already registered" });
 
-    const { fullName, phone, password } = otpEntry.userData;
+    const { fullName, phone, password, state, gender, age } = otpEntry.userData;
     const hashedPassword = await bcrypt.hash(password, 10); // ✅ hash
 
       const newUser = new UserModel({
       fullName,
       email,
       phone,
+      state,
+      gender,
+      age,
       password, // plain password; will be hashed in model
       loginMethod: 'password'
     });
@@ -106,7 +114,10 @@ exports.register = async (req, res) => {
       token,
       user: {
         email: newUser.email,
-        fullName: newUser.fullName
+        fullName: newUser.fullName,
+        state: newUser.state,
+        gender: newUser.gender,
+        age: newUser.age
       }
     });
   } catch (err) {
@@ -151,7 +162,13 @@ exports.login = async (req, res) => {
       message: "Login successful",
       accessToken,
       refreshToken,
-      user: { email: user.email, fullName: user.fullName }
+      user: { 
+        email: user.email, 
+        fullName: user.fullName,
+        state: user.state,
+        gender: user.gender,
+        age: user.age
+      }
     });
   } catch (err) {
     console.error('Login Error:', err);
@@ -275,6 +292,9 @@ exports.checkAuthStatus = async (req, res) => {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
+        state: user.state,
+        gender: user.gender,
+        age: user.age,
         loginMethod: user.loginMethod
       }
     });
@@ -372,6 +392,9 @@ exports.getAllUsers = async (req, res) => {
           name: user.fullName,
           email: user.email,
           phone: user.phone,
+          state: user.state,
+          gender: user.gender,
+          age: user.age,
           isPremium: user.isPremium,
           registeredDate: user.createdAt,
           totalBookings: bookingCount,
@@ -501,6 +524,9 @@ exports.getUserDetails = async (req, res) => {
       name: user.fullName,
       email: user.email,
       phone: user.phone,
+      state: user.state,
+      gender: user.gender,
+      age: user.age,
       isPremium: user.isPremium,
       registeredDate: user.createdAt,
       status: user.isActive ? 'active' : 'inactive',
@@ -709,6 +735,168 @@ exports.deleteUser = async (req, res) => {
       success: false,
       message: 'Error deleting user',
       error: error.message
+    });
+  }
+};
+
+// ✅ Update user profile information
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
+    const { fullName, phone, state, gender, age } = req.body;
+
+    // Validate age if provided
+    if (age) {
+      const ageNum = parseInt(age);
+      if (isNaN(ageNum) || ageNum < 13 || ageNum > 120) {
+        return res.status(400).json({ message: "Age must be between 13 and 120 years" });
+      }
+    }
+
+    const updateData = {};
+    if (fullName) updateData.fullName = fullName;
+    if (phone) updateData.phone = phone;
+    if (state) updateData.state = state;
+    if (gender) updateData.gender = gender;
+    if (age) updateData.age = parseInt(age);
+
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      updateData,
+      { new: true }
+    ).select('-password -refreshToken -otp -otpExpires');
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone,
+        state: user.state,
+        gender: user.gender,
+        age: user.age
+      }
+    });
+
+  } catch (err) {
+    console.error('Update Profile Error:', err);
+    res.status(500).json({ message: "Server error updating profile" });
+  }
+};
+
+// ✅ Store who recommended this app
+exports.storeRecommendationSource = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({ 
+        status: false,
+        message: "User not authenticated" 
+      });
+    }
+
+    const { recommendedBy } = req.body;
+
+    // Validate the recommendation source
+    const validSources = ['Friend', 'Family', 'Doctor', 'Social Media', 'Search Engine', 'Advertisement', 'Other'];
+    
+    if (!recommendedBy) {
+      return res.status(400).json({
+        status: false,
+        message: "Recommendation source is required"
+      });
+    }
+
+    if (!validSources.includes(recommendedBy)) {
+      return res.status(400).json({
+        status: false,
+        message: `Invalid recommendation source. Must be one of: ${validSources.join(', ')}`
+      });
+    }
+
+    // Update user with recommendation source
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { recommendedBy },
+      { new: true }
+    ).select('-password -refreshToken -otp -otpExpires');
+
+    if (!user) {
+      return res.status(404).json({
+        status: false,
+        message: "User not found"
+      });
+    }
+
+    console.log(`✅ User ${user.email} recommendation source stored: ${recommendedBy}`);
+
+    res.status(200).json({
+      status: true,
+      message: "Recommendation source stored successfully",
+      data: {
+        userId: user._id,
+        email: user.email,
+        recommendedBy: user.recommendedBy
+      }
+    });
+
+  } catch (err) {
+    console.error('Store Recommendation Source Error:', err);
+    res.status(500).json({
+      status: false,
+      message: "Server error storing recommendation source",
+      error: err.message
+    });
+  }
+};
+
+// ✅ Get who recommended this app
+exports.getRecommendationSource = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({ 
+        status: false,
+        message: "User not authenticated" 
+      });
+    }
+
+    const user = await UserModel.findById(userId).select('recommendedBy');
+
+    if (!user) {
+      return res.status(404).json({
+        status: false,
+        message: "User not found"
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Recommendation source retrieved successfully",
+      data: {
+        userId: user._id,
+        recommendedBy: user.recommendedBy
+      }
+    });
+
+  } catch (err) {
+    console.error('Get Recommendation Source Error:', err);
+    res.status(500).json({
+      status: false,
+      message: "Server error retrieving recommendation source",
+      error: err.message
     });
   }
 };

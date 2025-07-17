@@ -32,9 +32,57 @@ router.post('/logout', verifyToken, userController.logout);
 router.post('/logout-all-devices', verifyToken, userController.logoutAllDevices);
 router.get('/auth-status', verifyToken, userController.checkAuthStatus);
 
-router.get('/profile', verifyToken, (req, res) => {
-  res.json({ message: `Welcome ${req.user?.email}`, user: req.user });
+router.get('/profile', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
+    // Fetch complete user details from database
+    const user = await User.findById(userId).select('-password -refreshToken -otp -otpExpires');
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({ 
+      message: `Welcome ${user.email}`, 
+              user: {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          phone: user.phone,
+          state: user.state,
+          gender: user.gender,
+          age: user.age,
+          isPremium: user.isPremium,
+          isActive: user.isActive,
+          isFirstTimeUser: user.isFirstTimeUser,
+          hasCompletedQuestionnaire: user.hasCompletedQuestionnaire,
+          hasHadAutomaticBooking: user.hasHadAutomaticBooking,
+          preferredState: user.preferredState,
+          preferredSpecialization: user.preferredSpecialization,
+          profileImage: user.profileImage,
+          lastLoginAt: user.lastLoginAt,
+          lastLogoutAt: user.lastLogoutAt,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        }
+    });
+  } catch (error) {
+    console.error('Get Profile Error:', error);
+    res.status(500).json({ message: "Server error fetching profile" });
+  }
 });
+
+// Update user profile
+router.put('/profile', verifyToken, userController.updateProfile);
+
+// Store who recommended this app
+router.post('/recommendation-source', verifyToken, userController.storeRecommendationSource);
+router.get('/recommendation-source', verifyToken, userController.getRecommendationSource);
 
 router.get('/doctorlogin', verifyToken, (req, res) => {
   if (!req.doctor) return res.status(403).json({ message: "Forbidden: Doctors only" });
@@ -273,6 +321,7 @@ router.get('/states', controller.getStates);
 router.get('/booking-options', controller.getBookingOptions);
 router.get('/specializations', controller.getSpecializations);
 router.get('/follow-up/:selectedOption', controller.getFollowUpQuestions);
+router.get('/expanded-gender-options', controller.getExpandedGenderOptions);
 router.get('/user-status', verifyToken, controller.getUserStatus);
 router.post('/submit', verifyToken, controller.saveResponses);
 

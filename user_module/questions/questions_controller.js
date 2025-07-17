@@ -15,29 +15,87 @@ const states = [
 // Booking options
 const bookingOptions = ["Myself", "My child", "Couples", "My loved ones"];
 
-// Follow-up questions with 4 options each
+// Follow-up questions with expanded options
 const followUpQuestions = {
   "Myself": [
-     {
-      question: "What is your age ?",
+    {
+      question: "What is your age?",
       options: ["18 to 30", "30 to 45", "45 to 60", "60 and above"]
     },
     {
-      question: "what is your gender?",
-      options: ["Male", "Female", "Transgender", "Not prefer to say"]
+      question: "What is your gender?",
+      options: ["Male", "Female", "Not prefer to say", "More"],
+      expandedOptions: ["Non Binary", "Transmasculine", "Agender", "Not sure", "Other", "Transfeminine"]
     },
     {
-      question: "What is the main reason you are seeking support ?",
-      options: ["Stress", "Anxiety", "Sleep issues", "None"]
+      question: "Have you ever been in therapy or consulting before?",
+      options: ["Yes", "No"]
     },
     {
-      question: "What is your relationship status ?",
-      options: ["Married", "Unmarried", "Living together", "None"]
+      question: "What made you consider consulting today?",
+      options: [
+        "I have been going through tough times emotionally",
+        "I am navigating challenges related to addiction and substance abuse",
+        "I feel depressed",
+        "I have been having trouble sleeping",
+        "My low mood is interfering with my daily life",
+        "I have been feeling anxious or overwhelmed",
+        "I feel my life is empty and directionless",
+        "I want to talk about specific challenges",
+        "I want to heal from my trauma",
+        "I want to gain self-confidence",
+        "I want to improve myself but need a supportive hand along the way",
+        "I am going through a period of deep sadness",
+        "Other"
+      ],
+      allowMultiple: true
     },
     {
-      question: "What kind of therapy are you often to?",
-      options: ["Talk Therapy ", "CBT", "Mindfulness Based", "Not sure"]
-    }, 
+      question: "How would you describe your sleep pattern?",
+      type: "text",
+      placeholder: "Please describe your sleep pattern in your own words..."
+    },
+    {
+      question: "What traits are important to you in a therapist?",
+      options: [
+        "Listens with patience and understanding",
+        "Explores my past",
+        "Proactively follows up to support my progress",
+        "Helps me clarify and set meaningful goals",
+        "Understands trauma and provides safe environment",
+        "Helps me manage stress and return to a peaceful state after emotional release",
+        "Other"
+      ],
+      allowMultiple: true
+    },
+    {
+      question: "Are you currently experiencing anxiety, panic attacks, or any other phobia?",
+      options: ["Yes", "No"]
+    },
+    {
+      question: "Do you have any particular preferences regarding your therapist?",
+      options: [
+        "Male therapist",
+        "Female therapist", 
+        "LGBTQ+ therapist",
+        "Non-religious therapist",
+        "Older therapist (45+)",
+        "No preference"
+      ],
+      allowMultiple: true
+    },
+    {
+      question: "What is the main reason you are seeking support?",
+      options: ["Stress", "Anxiety", "Sleep issues", "Depression", "Relationship issues", "Other"]
+    },
+    {
+      question: "What is your relationship status?",
+      options: ["Married", "Unmarried", "Living together", "Divorced", "Widowed", "Prefer not to say"]
+    },
+    {
+      question: "What kind of therapy are you open to?",
+      options: ["Talk Therapy", "CBT", "Mindfulness Based", "EMDR", "Not sure", "Open to recommendations"]
+    }
   ],
   "My child": [
     {
@@ -45,38 +103,73 @@ const followUpQuestions = {
       options: ["0-5", "6-10", "11-15", "16-18"]
     },
     {
-      question: "What concerns do you have about your child ?",
-      options: ["Behavioral", "Academic", "Emotional", "Other"]
-    },{
-      question: "what is your child's gender?",
-      options: ["Male", "Female", "Transgender", "Not prefer to say"]
+      question: "What concerns do you have about your child?",
+      options: ["Behavioral", "Academic", "Emotional", "Social", "Developmental", "Other"]
     },
+    {
+      question: "What is your child's gender?",
+      options: ["Male", "Female", "Not prefer to say", "More"],
+      expandedOptions: ["Non Binary", "Transmasculine", "Agender", "Not sure", "Other", "Transfeminine"]
+    },
+    {
+      question: "Has your child been in therapy before?",
+      options: ["Yes", "No", "Not sure"]
+    },
+    {
+      question: "What specific behaviors or symptoms are you concerned about?",
+      type: "text",
+      placeholder: "Please describe the specific concerns you have about your child..."
+    }
   ],
   "Couples": [
     {
-      question: "What is the main challenge?",
-      options: ["Communication", "Trust", "Parenting", "Other"]
+      question: "What is the main challenge in your relationship?",
+      options: ["Communication", "Trust", "Parenting", "Intimacy", "Financial stress", "Other"]
     },
     {
       question: "Are you attending the session together?",
       options: ["Yes", "No", "Not Sure", "Sometimes"]
+    },
+    {
+      question: "How long have you been together?",
+      options: ["Less than 1 year", "1-3 years", "3-5 years", "5-10 years", "More than 10 years"]
+    },
+    {
+      question: "Have you tried couples therapy before?",
+      options: ["Yes", "No"]
+    },
+    {
+      question: "What specific issues would you like to address?",
+      type: "text",
+      placeholder: "Please describe the specific issues you'd like to work on..."
     }
   ],
   "My loved ones": [
     {
       question: "What is your relation to the person?",
-      options: ["Spouse", "Parent", "Sibling", "Friend"]
+      options: ["Spouse", "Parent", "Sibling", "Friend", "Child", "Other family member"]
     },
     {
       question: "Are they aware of this consultation?",
       options: ["Yes", "No", "Not Sure", "Prefer not to say"]
-    }, {
-      question: "What concer are they facing?",
-      options: ["Anxiety", "Brhavioural", "Depression", "Prefer not to say"]
-    },{
+    },
+    {
+      question: "What concerns are they facing?",
+      options: ["Anxiety", "Behavioral", "Depression", "Addiction", "Trauma", "Other"]
+    },
+    {
       question: "Would you like to join the session?",
       options: ["Yes", "No", "Not Sure", "Prefer not to say"]
     },
+    {
+      question: "How urgent is this situation?",
+      options: ["Very urgent", "Moderately urgent", "Not urgent", "Just want to be proactive"]
+    },
+    {
+      question: "What specific behaviors or symptoms are you concerned about?",
+      type: "text",
+      placeholder: "Please describe the specific concerns you have..."
+    }
   ]
 };
 
@@ -106,6 +199,12 @@ exports.getFollowUpQuestions = (req, res) => {
   }
 
   res.json(questions);
+};
+
+// GET /api/questions/expanded-gender-options
+exports.getExpandedGenderOptions = (req, res) => {
+  const expandedOptions = ["Non Binary", "Transmasculine", "Agender", "Not sure", "Other", "Transfeminine"];
+  res.json(expandedOptions);
 };
 
 // GET /api/questions/user-status - Check if user is first-time
@@ -169,6 +268,31 @@ exports.saveResponses = async (req, res) => {
     try {
       console.log("🔍 Starting automatic psychologist matching...");
       
+      // Check if user has already had an automatic booking
+      const user = await User.findById(userId);
+      if (user.hasHadAutomaticBooking) {
+        console.log("⚠️ User has already had an automatic booking, skipping automatic booking creation");
+        
+        // Update user status to mark as not first-time and save preferences
+        await User.findByIdAndUpdate(userId, {
+          isFirstTimeUser: false,
+          hasCompletedQuestionnaire: true,
+          preferredState: state,
+          preferredSpecialization: PsychologistMatchingService.getSpecializationFromBooking(bookingFor)
+        });
+
+        // Return success without creating booking
+        res.status(201).json({
+          success: true,
+          message: "Questionnaire submitted successfully. You have already had an automatic booking.",
+          isFirstTimeUser: false,
+          questionnaireResponse: savedResponse,
+          booking: null,
+          psychologist: null
+        });
+        return;
+      }
+      
       // Find the best psychologist for the user using enhanced matching
       const matchResult = await PsychologistMatchingService.findBestPsychologistEnhanced(
         state, 
@@ -203,6 +327,11 @@ exports.saveResponses = async (req, res) => {
             followUpAnswers
           }
         );
+
+        // Mark user as having had an automatic booking
+        await User.findByIdAndUpdate(userId, {
+          hasHadAutomaticBooking: true
+        });
 
         // Get psychologist details with image URL
         const psychologistDetails = await PsychologistMatchingService.getPsychologistWithImage(

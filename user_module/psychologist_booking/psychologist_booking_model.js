@@ -21,7 +21,7 @@ const bookingSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'completed', 'cancelled', 'rescheduled'],
+    enum: ['pending', 'confirmed', 'completed', 'cancelled', 'rescheduled', 'upcoming'],
     default: 'pending',
   },
   // Patient details for manual booking (optional for automatic booking)
