@@ -1053,16 +1053,11 @@ exports.forgotPassword = async (req, res) => {
         }
       });
     } else {
-      // For testing without email setup
-      console.log('⚠️ Email credentials not configured. Skipping email send.');
-      console.log('📧 Reset token for testing:', resetToken);
-      
-      res.status(200).json({
-        status: true,
-        message: "Password reset token generated (email not sent - check console)",
-        email: user.email,
-        resetToken: resetToken, // Only for testing
-        resetUrl: resetUrl
+      // For development/testing - return error to frontend
+      res.status(500).json({
+        status: false,
+        message: "Email service not configured. Please contact support.",
+        error: "EMAIL_SERVICE_NOT_CONFIGURED"
       });
       return;
     }
@@ -1087,15 +1082,15 @@ exports.forgotPassword = async (req, res) => {
 
       res.status(200).json({
         status: true,
-        message: "Password reset email sent successfully",
+        message: "Password reset email sent successfully. Please check your email.",
         email: user.email
       });
     } catch (emailError) {
       console.error('Email send error:', emailError);
       res.status(500).json({
         status: false,
-        message: "Error sending email",
-        error: emailError.message
+        message: "Failed to send password reset email. Please try again later.",
+        error: "EMAIL_SEND_FAILED"
       });
     }
 
