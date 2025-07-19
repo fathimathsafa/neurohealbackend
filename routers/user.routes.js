@@ -29,7 +29,7 @@ router.post('/login-doctor', userController.loginDoctor);
 
 // 🔐 Password Reset Routes
 router.post('/forgot-password', userController.forgotPassword);
-router.get('/verify-reset-token/:token', userController.verifyResetToken);
+router.post('/verify-otp', userController.verifyOTP);
 router.post('/reset-password', userController.resetPassword);
 
 // 🔐 Google OAuth Routes

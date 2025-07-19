@@ -1003,7 +1003,7 @@ exports.checkFirstBooking = async (req, res) => {
   }
 };
 
-// Simple Forgot Password - Direct Password Reset
+// Forgot Password - Send OTP Email
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -1025,30 +1025,95 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
-    // Generate a simple reset code (6 digits)
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const resetCodeExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    // Generate OTP (6 digits)
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Save reset code to user
-    user.resetPasswordToken = resetCode;
-    user.resetPasswordExpires = resetCodeExpiry;
+    // Save OTP to user
+    user.resetPasswordToken = otp;
+    user.resetPasswordExpires = otpExpiry;
     await user.save();
 
-    console.log(`✅ Reset code generated for ${user.email}: ${resetCode}`);
+    // Send OTP email
+    const nodemailer = require('nodemailer');
+    
+    let transporter;
+    
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASSWORD
+        }
+      });
+    } else {
+      // Development mode - return OTP in response
+      console.log(`⚠️ Email service not configured. OTP for ${user.email}: ${otp}`);
+      
+      res.status(200).json({
+        status: true,
+        message: "OTP sent to your email (development mode)",
+        email: user.email,
+        otp: otp, // Only in development
+        isDevelopment: true
+      });
+      return;
+    }
 
-    res.status(200).json({
-      status: true,
-      message: "Reset code generated successfully",
-      email: user.email,
-      resetCode: resetCode,
-      canProceed: true
-    });
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: user.email,
+      subject: 'Password Reset OTP',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Password Reset OTP</h2>
+          <p>You requested a password reset for your account.</p>
+          <p>Your OTP code is:</p>
+          <div style="background-color: #f4f4f4; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+            <h1 style="color: #007bff; font-size: 32px; margin: 0; letter-spacing: 5px;">${otp}</h1>
+          </div>
+          <p><strong>This OTP will expire in 10 minutes.</strong></p>
+          <p>If you didn't request this, please ignore this email.</p>
+          <hr style="margin: 20px 0;">
+          <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+        </div>
+      `
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log(`✅ OTP email sent to: ${user.email}`);
+
+      res.status(200).json({
+        status: true,
+        message: "OTP sent to your email successfully"
+      });
+    } catch (emailError) {
+      console.error('Email send error:', emailError);
+      
+      // In development, return OTP for testing
+      if (process.env.NODE_ENV === 'development') {
+        res.status(200).json({
+          status: true,
+          message: "OTP sent to your email (development mode)",
+          email: user.email,
+          otp: otp, // Only in development
+          isDevelopment: true
+        });
+      } else {
+        res.status(500).json({
+          status: false,
+          message: "Failed to send OTP email. Please try again later."
+        });
+      }
+    }
 
   } catch (error) {
     console.error('Forgot Password Error:', error);
     res.status(500).json({
       status: false,
-      message: "Error generating reset code",
+      message: "Error sending OTP email",
       error: error.message
     });
   }
@@ -1095,15 +1160,57 @@ exports.verifyResetToken = async (req, res) => {
   }
 };
 
-// Simple Reset Password
-exports.resetPassword = async (req, res) => {
+// Verify OTP
+exports.verifyOTP = async (req, res) => {
   try {
-    const { resetCode, newPassword } = req.body;
+    const { email, otp } = req.body;
 
-    if (!resetCode || !newPassword) {
+    if (!email || !otp) {
       return res.status(400).json({
         status: false,
-        message: "Reset code and new password are required"
+        message: "Email and OTP are required"
+      });
+    }
+
+    // Find user with valid OTP
+    const user = await UserModel.findOne({
+      email: email.toLowerCase(),
+      resetPasswordToken: otp,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid or expired OTP"
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "OTP verified successfully",
+      email: user.email
+    });
+
+  } catch (error) {
+    console.error('Verify OTP Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error verifying OTP",
+      error: error.message
+    });
+  }
+};
+
+// Reset Password with OTP
+exports.resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        status: false,
+        message: "Email, OTP, and new password are required"
       });
     }
 
@@ -1115,20 +1222,21 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Find user with valid reset code
+    // Find user with valid OTP
     const user = await UserModel.findOne({
-      resetPasswordToken: resetCode,
+      email: email.toLowerCase(),
+      resetPasswordToken: otp,
       resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
       return res.status(400).json({
         status: false,
-        message: "Invalid or expired reset code"
+        message: "Invalid or expired OTP"
       });
     }
 
-    // Update password and clear reset code
+    // Update password and clear OTP
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
