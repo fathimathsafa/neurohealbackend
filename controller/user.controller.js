@@ -1003,7 +1003,7 @@ exports.checkFirstBooking = async (req, res) => {
   }
 };
 
-// Forgot Password - Request Reset
+// Simple Forgot Password - Direct Password Reset
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -1018,124 +1018,37 @@ exports.forgotPassword = async (req, res) => {
     // Find user by email
     const user = await UserModel.findOne({ email: email.toLowerCase() });
     
-    // Always return success message regardless of whether email exists
-    // This prevents email enumeration attacks
     if (!user) {
-      console.log(`⚠️ Password reset requested for non-existent email: ${email}`);
-      
-      // Return success even if user doesn't exist (security best practice)
-      return res.status(200).json({
-        status: true,
-        message: "If an account with this email exists, a password reset link has been sent."
+      return res.status(404).json({
+        status: false,
+        message: "User with this email does not exist"
       });
     }
 
-    // Check if user already has a valid reset token (prevent spam)
-    if (user.resetPasswordToken && user.resetPasswordExpires > new Date()) {
-      console.log(`⚠️ Password reset already requested for: ${user.email}`);
-      
-      return res.status(200).json({
-        status: true,
-        message: "If an account with this email exists, a password reset link has been sent."
-      });
-    }
+    // Generate a simple reset code (6 digits)
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetCodeExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Generate reset token
-    const crypto = require('crypto');
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    // Save reset token to user
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = resetTokenExpiry;
+    // Save reset code to user
+    user.resetPasswordToken = resetCode;
+    user.resetPasswordExpires = resetCodeExpiry;
     await user.save();
 
-    // Create reset URL
-    const resetUrl = `${req.protocol}://${req.get('host')}/reset-password/${resetToken}`;
+    console.log(`✅ Reset code generated for ${user.email}: ${resetCode}`);
 
-    // Send email with reset link
-    const nodemailer = require('nodemailer');
-    
-    // Create transporter with better error handling
-    let transporter;
-    
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
-      transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD
-        }
-      });
-    } else {
-      // For development/testing - return token for seamless experience
-      console.log(`⚠️ Email service not configured. Returning token for development.`);
-      console.log(`📧 Reset token for ${user.email}: ${resetToken}`);
-      
-      res.status(200).json({
-        status: true,
-        message: "Password reset token generated successfully",
-        email: user.email,
-        resetToken: resetToken,
-        resetUrl: resetUrl,
-        isDevelopment: true
-      });
-      return;
-    }
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: user.email,
-      subject: 'Password Reset Request',
-      html: `
-        <h2>Password Reset Request</h2>
-        <p>You requested a password reset for your account.</p>
-        <p>Click the link below to reset your password:</p>
-        <a href="${resetUrl}" style="background-color: #4CAF50; color: white; padding: 14px 20px; text-decoration: none; border-radius: 4px;">Reset Password</a>
-        <p>This link will expire in 10 minutes.</p>
-        <p>If you didn't request this, please ignore this email.</p>
-      `
-    };
-
-    try {
-      await transporter.sendMail(mailOptions);
-      console.log(`✅ Password reset email sent to: ${user.email}`);
-
-      res.status(200).json({
-        status: true,
-        message: "If an account with this email exists, a password reset link has been sent."
-      });
-    } catch (emailError) {
-      console.error('Email send error:', emailError);
-      
-      // In development, return token for seamless experience
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`⚠️ Email send failed. Returning token for development.`);
-        console.log(`📧 Reset token for ${user.email}: ${resetToken}`);
-        
-        res.status(200).json({
-          status: true,
-          message: "Password reset token generated (email failed)",
-          email: user.email,
-          resetToken: resetToken,
-          resetUrl: resetUrl,
-          isDevelopment: true,
-          emailError: emailError.message
-        });
-      } else {
-        // In production, don't reveal if email exists or not
-        res.status(200).json({
-          status: true,
-          message: "If an account with this email exists, a password reset link has been sent."
-        });
-      }
-    }
+    res.status(200).json({
+      status: true,
+      message: "Reset code generated successfully",
+      email: user.email,
+      resetCode: resetCode,
+      canProceed: true
+    });
 
   } catch (error) {
     console.error('Forgot Password Error:', error);
     res.status(500).json({
       status: false,
-      message: "Error sending password reset email",
+      message: "Error generating reset code",
       error: error.message
     });
   }
@@ -1182,15 +1095,15 @@ exports.verifyResetToken = async (req, res) => {
   }
 };
 
-// Reset Password
+// Simple Reset Password
 exports.resetPassword = async (req, res) => {
   try {
-    const { token, newPassword } = req.body;
+    const { resetCode, newPassword } = req.body;
 
-    if (!token || !newPassword) {
+    if (!resetCode || !newPassword) {
       return res.status(400).json({
         status: false,
-        message: "Reset token and new password are required"
+        message: "Reset code and new password are required"
       });
     }
 
@@ -1202,20 +1115,20 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    // Find user with valid reset token
+    // Find user with valid reset code
     const user = await UserModel.findOne({
-      resetPasswordToken: token,
+      resetPasswordToken: resetCode,
       resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
       return res.status(400).json({
         status: false,
-        message: "Invalid or expired reset token"
+        message: "Invalid or expired reset code"
       });
     }
 
-    // Update password and clear reset token
+    // Update password and clear reset code
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
