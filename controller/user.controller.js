@@ -1039,12 +1039,12 @@ exports.forgotPassword = async (req, res) => {
     
     let transporter;
     
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
       transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
           user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD
+          pass: process.env.EMAIL_PASS
         }
       });
     } else {
@@ -1463,5 +1463,70 @@ exports.googleCallback = async (req, res) => {
     console.error('Google Callback Error:', error);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     res.redirect(`${frontendUrl}/auth/google-error?error=${encodeURIComponent(error.message)}`);
+  }
+};
+
+// Test Email Configuration
+exports.testEmail = async (req, res) => {
+  try {
+    console.log('🔍 Testing email configuration...');
+    console.log('EMAIL_USER:', process.env.EMAIL_USER ? 'Set' : 'Not set');
+    console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? 'Set' : 'Not set');
+    
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return res.status(400).json({
+        status: false,
+        message: "Email configuration missing",
+        emailUser: process.env.EMAIL_USER ? 'Set' : 'Not set',
+        emailPassword: process.env.EMAIL_PASS ? 'Set' : 'Not set'
+      });
+    }
+
+    const nodemailer = require('nodemailer');
+    
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    // Test email
+    const testEmail = req.body.testEmail || process.env.EMAIL_USER;
+    
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: testEmail,
+      subject: 'Email Test - NeuroHeal Backend',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Email Test Successful!</h2>
+          <p>Your email configuration is working correctly.</p>
+          <p>This is a test email from your NeuroHeal backend.</p>
+          <hr style="margin: 20px 0;">
+          <p style="color: #666; font-size: 12px;">Test sent at: ${new Date().toLocaleString()}</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Test email sent successfully to: ${testEmail}`);
+
+    res.status(200).json({
+      status: true,
+      message: "Test email sent successfully",
+      sentTo: testEmail
+    });
+
+  } catch (error) {
+    console.error('Test Email Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Email test failed",
+      error: error.message,
+      emailUser: process.env.EMAIL_USER ? 'Set' : 'Not set',
+      emailPassword: process.env.EMAIL_PASS ? 'Set' : 'Not set'
+    });
   }
 };
