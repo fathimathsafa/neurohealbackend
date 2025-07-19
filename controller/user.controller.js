@@ -1068,11 +1068,17 @@ exports.forgotPassword = async (req, res) => {
         }
       });
     } else {
-      // For development/testing - return error to frontend
-      res.status(500).json({
-        status: false,
-        message: "Email service not configured. Please contact support.",
-        error: "EMAIL_SERVICE_NOT_CONFIGURED"
+      // For development/testing - return token for seamless experience
+      console.log(`⚠️ Email service not configured. Returning token for development.`);
+      console.log(`📧 Reset token for ${user.email}: ${resetToken}`);
+      
+      res.status(200).json({
+        status: true,
+        message: "Password reset token generated successfully",
+        email: user.email,
+        resetToken: resetToken,
+        resetUrl: resetUrl,
+        isDevelopment: true
       });
       return;
     }
@@ -1102,11 +1108,27 @@ exports.forgotPassword = async (req, res) => {
     } catch (emailError) {
       console.error('Email send error:', emailError);
       
-      // Don't reveal if email exists or not
-      res.status(200).json({
-        status: true,
-        message: "If an account with this email exists, a password reset link has been sent."
-      });
+      // In development, return token for seamless experience
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`⚠️ Email send failed. Returning token for development.`);
+        console.log(`📧 Reset token for ${user.email}: ${resetToken}`);
+        
+        res.status(200).json({
+          status: true,
+          message: "Password reset token generated (email failed)",
+          email: user.email,
+          resetToken: resetToken,
+          resetUrl: resetUrl,
+          isDevelopment: true,
+          emailError: emailError.message
+        });
+      } else {
+        // In production, don't reveal if email exists or not
+        res.status(200).json({
+          status: true,
+          message: "If an account with this email exists, a password reset link has been sent."
+        });
+      }
     }
 
   } catch (error) {
