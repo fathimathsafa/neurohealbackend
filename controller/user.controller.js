@@ -1018,10 +1018,25 @@ exports.forgotPassword = async (req, res) => {
     // Find user by email
     const user = await UserModel.findOne({ email: email.toLowerCase() });
     
+    // Always return success message regardless of whether email exists
+    // This prevents email enumeration attacks
     if (!user) {
-      return res.status(404).json({
-        status: false,
-        message: "User with this email does not exist"
+      console.log(`⚠️ Password reset requested for non-existent email: ${email}`);
+      
+      // Return success even if user doesn't exist (security best practice)
+      return res.status(200).json({
+        status: true,
+        message: "If an account with this email exists, a password reset link has been sent."
+      });
+    }
+
+    // Check if user already has a valid reset token (prevent spam)
+    if (user.resetPasswordToken && user.resetPasswordExpires > new Date()) {
+      console.log(`⚠️ Password reset already requested for: ${user.email}`);
+      
+      return res.status(200).json({
+        status: true,
+        message: "If an account with this email exists, a password reset link has been sent."
       });
     }
 
@@ -1082,15 +1097,15 @@ exports.forgotPassword = async (req, res) => {
 
       res.status(200).json({
         status: true,
-        message: "Password reset email sent successfully. Please check your email.",
-        email: user.email
+        message: "If an account with this email exists, a password reset link has been sent."
       });
     } catch (emailError) {
       console.error('Email send error:', emailError);
-      res.status(500).json({
-        status: false,
-        message: "Failed to send password reset email. Please try again later.",
-        error: "EMAIL_SEND_FAILED"
+      
+      // Don't reveal if email exists or not
+      res.status(200).json({
+        status: true,
+        message: "If an account with this email exists, a password reset link has been sent."
       });
     }
 
@@ -1116,7 +1131,7 @@ exports.verifyResetToken = async (req, res) => {
       });
     }
 
-    // Find user with valid reset token
+    // Find user with valid reset token 
     const user = await UserModel.findOne({
       resetPasswordToken: token,
       resetPasswordExpires: { $gt: Date.now() }
