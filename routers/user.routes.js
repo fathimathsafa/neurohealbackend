@@ -84,6 +84,12 @@ router.put('/profile', verifyToken, userController.updateProfile);
 router.post('/recommendation-source', verifyToken, userController.storeRecommendationSource);
 router.get('/recommendation-source', verifyToken, userController.getRecommendationSource);
 
+// Check if user should be shown recommendation question after first booking
+router.get('/check-recommendation-question', verifyToken, userController.checkRecommendationQuestion);
+
+// Check if user has made their first booking
+router.get('/check-first-booking', verifyToken, userController.checkFirstBooking);
+
 router.get('/doctorlogin', verifyToken, (req, res) => {
   if (!req.doctor) return res.status(403).json({ message: "Forbidden: Doctors only" });
   res.json({ message: `Welcome Dr. ${req.doctor.email}`, doctor: req.doctor });
