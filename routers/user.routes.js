@@ -27,6 +27,15 @@ router.post('/registration', userController.register);
 router.post('/login', userController.login);
 router.post('/login-doctor', userController.loginDoctor);
 
+// 🔐 Password Reset Routes
+router.post('/forgot-password', userController.forgotPassword);
+router.get('/verify-reset-token/:token', userController.verifyResetToken);
+router.post('/reset-password', userController.resetPassword);
+
+// 🔐 Google OAuth Routes
+router.post('/google-login', userController.googleLogin);
+router.get('/google-callback', userController.googleCallback);
+
 // 🔐 Logout Routes
 router.post('/logout', verifyToken, userController.logout);
 router.post('/logout-all-devices', verifyToken, userController.logoutAllDevices);
