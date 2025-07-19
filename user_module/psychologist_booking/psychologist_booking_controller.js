@@ -16,6 +16,10 @@ exports.createBooking = async (req, res) => {
       });
     }
 
+    // Check if this is user's first booking
+    const existingBookings = await Booking.find({ user: userId });
+    const isFirstBooking = existingBookings.length === 0;
+
     // Create booking
     const newBooking = new Booking({
       user: userId,
@@ -27,10 +31,13 @@ exports.createBooking = async (req, res) => {
 
     const savedBooking = await newBooking.save();
 
+    // Return response with first booking indicator
     res.status(201).json({
       status: true,
-      message: 'Booking created successfully',
-      booking: savedBooking
+      message: isFirstBooking ? 'First booking created successfully' : 'Booking created successfully',
+      booking: savedBooking,
+      isFirstBooking: isFirstBooking,
+      totalBookings: existingBookings.length + 1
     });
 
   } catch (err) {
@@ -1256,6 +1263,10 @@ exports.createBookingWithDetails = async (req, res) => {
       });
     }
 
+    // Check if this is user's first booking
+    const existingBookings = await Booking.find({ user: userId });
+    const isFirstBooking = existingBookings.length === 0;
+
     // Create booking with patient details
     const newBooking = new Booking({
       user: userId,
@@ -1288,7 +1299,7 @@ exports.createBookingWithDetails = async (req, res) => {
 
     res.status(201).json({
       status: true,
-      message: 'Booking created successfully with patient details',
+      message: isFirstBooking ? 'First booking created successfully with patient details' : 'Booking created successfully with patient details',
       booking: {
         id: savedBooking._id,
         date: savedBooking.date,
@@ -1297,7 +1308,9 @@ exports.createBookingWithDetails = async (req, res) => {
         patientDetails: savedBooking.patientDetails,
         createdAt: savedBooking.createdAt
       },
-      psychologist: psychologistWithImage
+      psychologist: psychologistWithImage,
+      isFirstBooking: isFirstBooking,
+      totalBookings: existingBookings.length + 1
     });
 
   } catch (err) {

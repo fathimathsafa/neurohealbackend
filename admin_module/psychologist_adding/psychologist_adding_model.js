@@ -24,7 +24,7 @@ const PsychologistSchema = new mongoose.Schema({
   workingDays: {
     type: [String],
     enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-    default: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    default: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday','Saturday']
   },
   workingHours: {
     start: { type: String, default: '09:00' }, // 9 AM

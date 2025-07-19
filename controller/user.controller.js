@@ -900,3 +900,105 @@ exports.getRecommendationSource = async (req, res) => {
     });
   }
 };
+
+// Check if user should be shown recommendation question after first booking
+exports.checkRecommendationQuestion = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
+    // Get user details
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if user has already provided recommendation source
+    if (user.recommendedBy) {
+      return res.status(200).json({
+        shouldShowQuestion: false,
+        message: "Recommendation source already provided",
+        recommendationSource: user.recommendedBy
+      });
+    }
+
+    // Check if user has any bookings (not just completed ones)
+    const Booking = require('../user_module/psychologist_booking/psychologist_booking_model');
+    const allBookings = await Booking.find({ user: userId });
+
+    // If user has any bookings, show recommendation question
+    if (allBookings.length > 0) {
+      return res.status(200).json({
+        shouldShowQuestion: true,
+        message: "User has bookings, show recommendation question",
+        totalBookingsCount: allBookings.length,
+        firstBookingDate: allBookings[0].date,
+        firstBookingStatus: allBookings[0].status
+      });
+    }
+
+    // If no bookings yet, don't show question
+    return res.status(200).json({
+      shouldShowQuestion: false,
+      message: "No bookings yet",
+      totalBookingsCount: 0
+    });
+
+  } catch (error) {
+    console.error('Check Recommendation Question Error:', error);
+    res.status(500).json({ message: "Server error checking recommendation question", error: error.message });
+  }
+};
+
+// Check if user has made their first booking
+exports.checkFirstBooking = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+
+    // Check user's booking history
+    const Booking = require('../user_module/psychologist_booking/psychologist_booking_model');
+    const allBookings = await Booking.find({ user: userId }).sort({ createdAt: 1 });
+
+    if (allBookings.length === 0) {
+      return res.status(200).json({
+        hasMadeFirstBooking: false,
+        message: "User has not made any bookings yet",
+        totalBookings: 0,
+        firstBooking: null
+      });
+    }
+
+    const firstBooking = allBookings[0];
+    
+    return res.status(200).json({
+      hasMadeFirstBooking: true,
+      message: "User has made their first booking",
+      totalBookings: allBookings.length,
+      firstBooking: {
+        id: firstBooking._id,
+        date: firstBooking.date,
+        time: firstBooking.time,
+        status: firstBooking.status,
+        bookingMethod: firstBooking.bookingMethod,
+        createdAt: firstBooking.createdAt
+      },
+      latestBooking: allBookings.length > 1 ? {
+        id: allBookings[allBookings.length - 1]._id,
+        date: allBookings[allBookings.length - 1].date,
+        time: allBookings[allBookings.length - 1].time,
+        status: allBookings[allBookings.length - 1].status
+      } : null
+    });
+
+  } catch (error) {
+    console.error('Check First Booking Error:', error);
+    res.status(500).json({ message: "Server error checking first booking", error: error.message });
+  }
+};
