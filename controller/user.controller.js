@@ -1002,3 +1002,413 @@ exports.checkFirstBooking = async (req, res) => {
     res.status(500).json({ message: "Server error checking first booking", error: error.message });
   }
 };
+
+// Forgot Password - Request Reset
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        status: false,
+        message: "Email is required"
+      });
+    }
+
+    // Find user by email
+    const user = await UserModel.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(404).json({
+        status: false,
+        message: "User with this email does not exist"
+      });
+    }
+
+    // Generate reset token
+    const crypto = require('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Save reset token to user
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = resetTokenExpiry;
+    await user.save();
+
+    // Create reset URL
+    const resetUrl = `${req.protocol}://${req.get('host')}/reset-password/${resetToken}`;
+
+    // Send email with reset link
+    const nodemailer = require('nodemailer');
+    
+    // Create transporter with better error handling
+    let transporter;
+    
+    if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASSWORD
+        }
+      });
+    } else {
+      // For testing without email setup
+      console.log('⚠️ Email credentials not configured. Skipping email send.');
+      console.log('📧 Reset token for testing:', resetToken);
+      
+      res.status(200).json({
+        status: true,
+        message: "Password reset token generated (email not sent - check console)",
+        email: user.email,
+        resetToken: resetToken, // Only for testing
+        resetUrl: resetUrl
+      });
+      return;
+    }
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: user.email,
+      subject: 'Password Reset Request',
+      html: `
+        <h2>Password Reset Request</h2>
+        <p>You requested a password reset for your account.</p>
+        <p>Click the link below to reset your password:</p>
+        <a href="${resetUrl}" style="background-color: #4CAF50; color: white; padding: 14px 20px; text-decoration: none; border-radius: 4px;">Reset Password</a>
+        <p>This link will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+      `
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log(`✅ Password reset email sent to: ${user.email}`);
+
+      res.status(200).json({
+        status: true,
+        message: "Password reset email sent successfully",
+        email: user.email
+      });
+    } catch (emailError) {
+      console.error('Email send error:', emailError);
+      res.status(500).json({
+        status: false,
+        message: "Error sending email",
+        error: emailError.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Forgot Password Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error sending password reset email",
+      error: error.message
+    });
+  }
+};
+
+// Verify Reset Token
+exports.verifyResetToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    if (!token) {
+      return res.status(400).json({
+        status: false,
+        message: "Reset token is required"
+      });
+    }
+
+    // Find user with valid reset token
+    const user = await UserModel.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid or expired reset token"
+      });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Reset token is valid",
+      email: user.email
+    });
+
+  } catch (error) {
+    console.error('Verify Reset Token Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error verifying reset token",
+      error: error.message
+    });
+  }
+};
+
+// Reset Password
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        status: false,
+        message: "Reset token and new password are required"
+      });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        status: false,
+        message: "Password must be at least 6 characters long"
+      });
+    }
+
+    // Find user with valid reset token
+    const user = await UserModel.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid or expired reset token"
+      });
+    }
+
+    // Update password and clear reset token
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    user.loginMethod = 'password';
+    await user.save();
+
+    console.log(`✅ Password reset successful for: ${user.email}`);
+
+    res.status(200).json({
+      status: true,
+      message: "Password reset successfully"
+    });
+
+  } catch (error) {
+    console.error('Reset Password Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error resetting password",
+      error: error.message
+    });
+  }
+};
+
+// Google OAuth Login
+exports.googleLogin = async (req, res) => {
+  try {
+    const { googleToken } = req.body;
+
+    if (!googleToken) {
+      return res.status(400).json({
+        status: false,
+        message: "Google token is required"
+      });
+    }
+
+    // Verify Google token
+    const { OAuth2Client } = require('google-auth-library');
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+    const ticket = await client.verifyIdToken({
+      idToken: googleToken,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    // Check if user exists with this Google ID
+    let user = await UserModel.findOne({ googleId });
+
+    if (!user) {
+      // Check if user exists with this email
+      user = await UserModel.findOne({ email: email.toLowerCase() });
+
+      if (user) {
+        // User exists but doesn't have Google ID - link accounts
+        user.googleId = googleId;
+        user.googleEmail = email;
+        user.loginMethod = 'google';
+        if (!user.fullName) user.fullName = name;
+        if (!user.profileImage) user.profileImage = picture;
+        await user.save();
+      } else {
+        // Create new user with Google data
+        user = new UserModel({
+          googleId,
+          googleEmail: email,
+          email: email.toLowerCase(),
+          fullName: name,
+          profileImage: picture,
+          loginMethod: 'google',
+          // Set default values for required fields
+          state: 'Not Specified',
+          gender: 'Not Specified',
+          age: 18
+        });
+        await user.save();
+      }
+    }
+
+    // Update last login
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    // Generate JWT tokens
+    const jwt = require('jsonwebtoken');
+    const accessToken = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Save refresh token to user
+    user.refreshToken = refreshToken;
+    user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await user.save();
+
+    console.log(`✅ Google login successful for: ${user.email}`);
+
+    res.status(200).json({
+      status: true,
+      message: "Google login successful",
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          fullName: user.fullName,
+          profileImage: user.profileImage,
+          loginMethod: user.loginMethod
+        },
+        accessToken,
+        refreshToken
+      }
+    });
+
+  } catch (error) {
+    console.error('Google Login Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error during Google login",
+      error: error.message
+    });
+  }
+};
+
+// Google OAuth Callback (for server-side flow)
+exports.googleCallback = async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.status(400).json({
+        status: false,
+        message: "Authorization code is required"
+      });
+    }
+
+    // Exchange code for tokens
+    const { OAuth2Client } = require('google-auth-library');
+    const client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+
+    const { tokens } = await client.getToken(code);
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    // Check if user exists with this Google ID
+    let user = await UserModel.findOne({ googleId });
+
+    if (!user) {
+      // Check if user exists with this email
+      user = await UserModel.findOne({ email: email.toLowerCase() });
+
+      if (user) {
+        // User exists but doesn't have Google ID - link accounts
+        user.googleId = googleId;
+        user.googleEmail = email;
+        user.loginMethod = 'google';
+        if (!user.fullName) user.fullName = name;
+        if (!user.profileImage) user.profileImage = picture;
+        await user.save();
+      } else {
+        // Create new user with Google data
+        user = new UserModel({
+          googleId,
+          googleEmail: email,
+          email: email.toLowerCase(),
+          fullName: name,
+          profileImage: picture,
+          loginMethod: 'google',
+          // Set default values for required fields
+          state: 'Not Specified',
+          gender: 'Not Specified',
+          age: 18
+        });
+        await user.save();
+      }
+    }
+
+    // Update last login
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    // Generate JWT tokens
+    const jwt = require('jsonwebtoken');
+    const accessToken = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Save refresh token to user
+    user.refreshToken = refreshToken;
+    user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await user.save();
+
+    console.log(`✅ Google callback successful for: ${user.email}`);
+
+    // Redirect to frontend with tokens
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/auth/google-success?accessToken=${accessToken}&refreshToken=${refreshToken}`);
+
+  } catch (error) {
+    console.error('Google Callback Error:', error);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/auth/google-error?error=${encodeURIComponent(error.message)}`);
+  }
+};
