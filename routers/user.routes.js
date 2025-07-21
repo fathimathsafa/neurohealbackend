@@ -37,6 +37,8 @@ router.post('/test-email', userController.testEmail);
 
 // 🔐 Google OAuth Routes
 router.post('/google-login', userController.googleLogin);
+router.post('/google-pre-login', userController.googlePreLogin);
+router.post('/google-verify-otp', userController.googleVerifyOTP);
 router.get('/google-callback', userController.googleCallback);
 
 // 🔐 Logout Routes

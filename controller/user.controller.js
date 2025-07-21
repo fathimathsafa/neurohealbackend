@@ -1466,6 +1466,265 @@ exports.googleCallback = async (req, res) => {
   }
 };
 
+// Google OAuth Pre-Login (Show user details and send OTP)
+exports.googlePreLogin = async (req, res) => {
+  try {
+    const { googleToken } = req.body;
+
+    if (!googleToken) {
+      return res.status(400).json({
+        status: false,
+        message: "Google token is required"
+      });
+    }
+
+    // Verify Google token
+    const { OAuth2Client } = require('google-auth-library');
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+    const ticket = await client.verifyIdToken({
+      idToken: googleToken,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    // Check if user exists with this Google ID or email
+    let user = await UserModel.findOne({ 
+      $or: [
+        { googleId },
+        { email: email.toLowerCase() }
+      ]
+    });
+
+    // Generate OTP for verification
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    // Store OTP with Google data
+    otpStore[email] = {
+      otp,
+      otpExpires,
+      googleData: { googleId, email, name, picture },
+      isGoogleLogin: true
+    };
+
+    // Send OTP via email
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Verify Your Google Sign-In',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #4285f4;">Google Sign-In Verification</h2>
+            <p>Hello ${name},</p>
+            <p>You're signing in with Google. Please use this OTP to verify your account:</p>
+            <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+              <h1 style="color: #4285f4; font-size: 32px; margin: 0; letter-spacing: 4px;">${otp}</h1>
+            </div>
+            <p><strong>This OTP expires in 5 minutes.</strong></p>
+            <p>If you didn't request this sign-in, please ignore this email.</p>
+            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+            <p style="color: #666; font-size: 12px;">This is an automated message from your app.</p>
+          </div>
+        `
+      });
+
+      console.log(`✅ Google pre-login OTP sent to: ${email}`);
+
+      res.status(200).json({
+        status: true,
+        message: "OTP sent to your email for verification",
+        data: {
+          user: {
+            name,
+            email,
+            picture,
+            isNewUser: !user,
+            existingUser: user ? {
+              id: user._id,
+              fullName: user.fullName,
+              profileImage: user.profileImage,
+              loginMethod: user.loginMethod
+            } : null
+          }
+        }
+      });
+
+    } catch (emailError) {
+      console.error('Email sending error:', emailError);
+      
+      // In development, return OTP in response
+      if (process.env.NODE_ENV === 'development') {
+        res.status(200).json({
+          status: true,
+          message: "OTP sent (development mode)",
+          data: {
+            user: {
+              name,
+              email,
+              picture,
+              isNewUser: !user,
+              existingUser: user ? {
+                id: user._id,
+                fullName: user.fullName,
+                profileImage: user.profileImage,
+                loginMethod: user.loginMethod
+              } : null
+            },
+            otp: otp // Only in development
+          }
+        });
+      } else {
+        res.status(500).json({
+          status: false,
+          message: "Failed to send OTP email"
+        });
+      }
+    }
+
+  } catch (error) {
+    console.error('Google Pre-Login Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error during Google pre-login",
+      error: error.message
+    });
+  }
+};
+
+// Google OAuth Verify OTP and Complete Login
+exports.googleVerifyOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        status: false,
+        message: "Email and OTP are required"
+      });
+    }
+
+    const otpEntry = otpStore[email];
+
+    if (!otpEntry || !otpEntry.isGoogleLogin) {
+      return res.status(400).json({
+        status: false,
+        message: "No Google login OTP found for this email"
+      });
+    }
+
+    if (otpEntry.otp !== otp) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid OTP"
+      });
+    }
+
+    if (Date.now() > otpEntry.otpExpires) {
+      delete otpStore[email];
+      return res.status(400).json({
+        status: false,
+        message: "OTP expired"
+      });
+    }
+
+    // OTP is valid, proceed with login
+    const { googleId, name, picture } = otpEntry.googleData;
+
+    // Check if user exists with this Google ID or email
+    let user = await UserModel.findOne({ 
+      $or: [
+        { googleId },
+        { email: email.toLowerCase() }
+      ]
+    });
+
+    if (!user) {
+      // Create new user with Google data
+      user = new UserModel({
+        googleId,
+        googleEmail: email,
+        email: email.toLowerCase(),
+        fullName: name,
+        profileImage: picture,
+        loginMethod: 'google',
+        // Set default values for required fields
+        state: 'Not Specified',
+        gender: 'Not Specified',
+        age: 18
+      });
+      await user.save();
+      console.log(`✅ New user created via Google: ${email}`);
+    } else {
+      // Update existing user with Google data if needed
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.googleEmail = email;
+        user.loginMethod = 'google';
+      }
+      if (!user.fullName) user.fullName = name;
+      if (!user.profileImage) user.profileImage = picture;
+      await user.save();
+      console.log(`✅ Existing user linked with Google: ${email}`);
+    }
+
+    // Update last login
+    user.lastLoginAt = new Date();
+    await user.save();
+
+    // Generate JWT tokens
+    const jwt = require('jsonwebtoken');
+    const accessToken = jwt.sign(
+      { id: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    const refreshToken = jwt.sign(
+      { id: user._id },
+      process.env.JWT_REFRESH_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Save refresh token to user
+    user.refreshToken = refreshToken;
+    user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await user.save();
+
+    // Clear OTP from store
+    delete otpStore[email];
+
+    console.log(`✅ Google login completed for: ${user.email}`);
+
+    res.status(200).json({
+      status: true,
+      message: "Google login successful",
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          fullName: user.fullName,
+          profileImage: user.profileImage,
+          loginMethod: user.loginMethod
+        },
+        accessToken,
+        refreshToken
+      }
+    });
+
+  } catch (error) {
+    console.error('Google Verify OTP Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error during Google OTP verification",
+      error: error.message
+    });
+  }
+};
+
 // Test Email Configuration
 exports.testEmail = async (req, res) => {
   try {
