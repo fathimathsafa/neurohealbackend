@@ -32,17 +32,6 @@ router.post('/forgot-password', userController.forgotPassword);
 router.post('/verify-otp', userController.verifyOTP);
 router.post('/reset-password', userController.resetPassword);
 
-// 🔧 Test Email Configuration
-router.post('/test-email', userController.testEmail);
-
-// 🔐 Google OAuth Routes
-router.post('/google-login', userController.googleLogin);
-router.post('/google-pre-login', userController.googlePreLogin);
-router.post('/google-verify-otp', userController.googleVerifyOTP);
-router.get('/google-callback', userController.googleCallback);
-
-// 🔧 Configuration Check Route
-router.get('/check-google-config', userController.checkGoogleConfig);
 
 // 🔐 Logout Routes
 router.post('/logout', verifyToken, userController.logout);

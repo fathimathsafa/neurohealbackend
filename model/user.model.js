@@ -36,11 +36,9 @@ const userSchema = new mongoose.Schema({
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
   // Google OAuth fields
-  googleId: { type: String },
-  googleEmail: { type: String },
   loginMethod: {
     type: String,
-    enum: ['password', 'otp', 'google'],
+    enum: ['password', 'otp'],
     default: 'password'
   },
   refreshToken: {
