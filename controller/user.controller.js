@@ -1279,11 +1279,11 @@ exports.googleLogin = async (req, res) => {
     // Verify Google token with better error handling
     const { OAuth2Client } = require('google-auth-library');
     
-    // Get client ID from environment
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    console.log('🔍 Using Client ID:', clientId ? clientId.substring(0, 20) + '...' : 'NOT SET');
+    // Get client IDs from environment - support multiple client IDs
+    const clientIds = process.env.GOOGLE_CLIENT_ID ? process.env.GOOGLE_CLIENT_ID.split(',') : [];
+    console.log('🔍 Available Client IDs:', clientIds.map(id => id.substring(0, 20) + '...'));
 
-    if (!clientId) {
+    if (clientIds.length === 0) {
       console.error('❌ GOOGLE_CLIENT_ID not configured in environment');
       return res.status(500).json({
         status: false,
@@ -1291,14 +1291,38 @@ exports.googleLogin = async (req, res) => {
       });
     }
 
-    const client = new OAuth2Client(clientId);
+    // Try to verify with each client ID
+    let ticket = null;
+    let verifiedClientId = null;
+    let lastError = null;
+
+    for (const clientId of clientIds) {
+      try {
+        const client = new OAuth2Client(clientId.trim());
+        ticket = await client.verifyIdToken({
+          idToken: googleToken,
+          audience: clientId.trim()
+        });
+        verifiedClientId = clientId.trim();
+        console.log('✅ Token verified with client ID:', clientId.substring(0, 20) + '...');
+        break;
+      } catch (error) {
+        console.log('❌ Failed with client ID:', clientId.substring(0, 20) + '...', error.message);
+        lastError = error;
+        continue;
+      }
+    }
+
+    if (!ticket) {
+      console.error('❌ Token verification failed with all client IDs:', lastError?.message);
+      return res.status(400).json({
+        status: false,
+        message: "Google authentication failed. Please try again.",
+        debug: lastError?.message || "Token verification failed"
+      });
+    }
 
     try {
-      const ticket = await client.verifyIdToken({
-        idToken: googleToken,
-        audience: clientId
-      });
-
       const payload = ticket.getPayload();
       console.log('🔍 Google Payload:', {
         sub: payload.sub,
@@ -1413,7 +1437,7 @@ exports.googleLogin = async (req, res) => {
           status: false,
           message: "OAuth client ID mismatch. Please check your configuration.",
           debug: "Client ID mismatch",
-          clientId: clientId ? clientId.substring(0, 20) + '...' : 'NOT SET'
+          clientId: verifiedClientId ? verifiedClientId.substring(0, 20) + '...' : 'NOT SET'
         });
       }
 
@@ -1434,6 +1458,8 @@ exports.googleLogin = async (req, res) => {
   }
 };
 
+
+
 // Google OAuth Callback (for server-side flow)
 exports.googleCallback = async (req, res) => {
   try {
@@ -1448,8 +1474,19 @@ exports.googleCallback = async (req, res) => {
 
     // Exchange code for tokens
     const { OAuth2Client } = require('google-auth-library');
+    
+    // Get the first client ID for server-side flow
+    const clientId = process.env.GOOGLE_CLIENT_ID ? process.env.GOOGLE_CLIENT_ID.split(',')[0].trim() : null;
+    
+    if (!clientId) {
+      return res.status(500).json({
+        status: false,
+        message: "Google OAuth not configured properly"
+      });
+    }
+    
     const client = new OAuth2Client(
-      process.env.GOOGLE_CLIENT_ID,
+      clientId,
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI
     );
@@ -1457,7 +1494,7 @@ exports.googleCallback = async (req, res) => {
     const { tokens } = await client.getToken(code);
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
-      audience: process.env.GOOGLE_CLIENT_ID
+      audience: clientId
     });
 
     const payload = ticket.getPayload();
@@ -1923,19 +1960,19 @@ exports.testEmail = async (req, res) => {
 // Check Google OAuth Configuration
 exports.checkGoogleConfig = async (req, res) => {
   try {
-    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientIds = process.env.GOOGLE_CLIENT_ID ? process.env.GOOGLE_CLIENT_ID.split(',') : [];
     const emailUser = process.env.EMAIL_USER;
-    const emailPassword = process.env.EMAIL_PASSWORD;
+    const emailPassword = process.env.EMAIL_PASS;
     
     const config = {
-      googleClientId: clientId ? {
-        exists: true,
-        length: clientId.length,
-        preview: clientId.substring(0, 20) + '...',
-        endsWith: clientId.endsWith('.apps.googleusercontent.com') ? 'Valid format' : 'Invalid format'
-      } : {
-        exists: false,
-        error: 'GOOGLE_CLIENT_ID not set'
+      googleClientId: {
+        exists: clientIds.length > 0,
+        count: clientIds.length,
+        ids: clientIds.map(id => ({
+          preview: id.substring(0, 20) + '...',
+          length: id.length,
+          endsWith: id.endsWith('.apps.googleusercontent.com') ? 'Valid format' : 'Invalid format'
+        }))
       },
       emailConfig: {
         user: emailUser ? 'Set' : 'Not set',
