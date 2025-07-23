@@ -41,6 +41,9 @@ router.post('/google-pre-login', userController.googlePreLogin);
 router.post('/google-verify-otp', userController.googleVerifyOTP);
 router.get('/google-callback', userController.googleCallback);
 
+// 🔧 Configuration Check Route
+router.get('/check-google-config', userController.checkGoogleConfig);
+
 // 🔐 Logout Routes
 router.post('/logout', verifyToken, userController.logout);
 router.post('/logout-all-devices', verifyToken, userController.logoutAllDevices);

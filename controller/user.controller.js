@@ -1272,98 +1272,164 @@ exports.googleLogin = async (req, res) => {
       });
     }
 
-    // Verify Google token
+    // Debug: Log the token (first 50 characters for security)
+    console.log('🔍 Google Token received:', googleToken.substring(0, 50) + '...');
+    console.log('🔍 Token length:', googleToken.length);
+
+    // Verify Google token with better error handling
     const { OAuth2Client } = require('google-auth-library');
-    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    
+    // Get client ID from environment
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    console.log('🔍 Using Client ID:', clientId ? clientId.substring(0, 20) + '...' : 'NOT SET');
 
-    const ticket = await client.verifyIdToken({
-      idToken: googleToken,
-      audience: process.env.GOOGLE_CLIENT_ID
-    });
-
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, name, picture } = payload;
-
-    // Check if user exists with this Google ID
-    let user = await UserModel.findOne({ googleId });
-
-    if (!user) {
-      // Check if user exists with this email
-      user = await UserModel.findOne({ email: email.toLowerCase() });
-
-      if (user) {
-        // User exists but doesn't have Google ID - link accounts
-        user.googleId = googleId;
-        user.googleEmail = email;
-        user.loginMethod = 'google';
-        if (!user.fullName) user.fullName = name;
-        if (!user.profileImage) user.profileImage = picture;
-        await user.save();
-      } else {
-        // Create new user with Google data
-        user = new UserModel({
-          googleId,
-          googleEmail: email,
-          email: email.toLowerCase(),
-          fullName: name,
-          profileImage: picture,
-          loginMethod: 'google',
-          // Set default values for required fields
-          state: 'Not Specified',
-          gender: 'Not Specified',
-          age: 18
-        });
-        await user.save();
-      }
+    if (!clientId) {
+      console.error('❌ GOOGLE_CLIENT_ID not configured in environment');
+      return res.status(500).json({
+        status: false,
+        message: "Google OAuth not configured properly"
+      });
     }
 
-    // Update last login
-    user.lastLoginAt = new Date();
-    await user.save();
+    const client = new OAuth2Client(clientId);
 
-    // Generate JWT tokens
-    const jwt = require('jsonwebtoken');
-    const accessToken = jwt.sign(
-      { id: user._id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken: googleToken,
+        audience: clientId
+      });
 
-    const refreshToken = jwt.sign(
-      { id: user._id },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' }
-    );
+      const payload = ticket.getPayload();
+      console.log('🔍 Google Payload:', {
+        sub: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        aud: payload.aud,
+        iss: payload.iss
+      });
 
-    // Save refresh token to user
-    user.refreshToken = refreshToken;
-    user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await user.save();
+      const { sub: googleId, email, name, picture } = payload;
 
-    console.log(`✅ Google login successful for: ${user.email}`);
+      // Check if user exists with this Google ID
+      let user = await UserModel.findOne({ googleId });
 
-    res.status(200).json({
-      status: true,
-      message: "Google login successful",
-      data: {
-        user: {
-          id: user._id,
-          email: user.email,
-          fullName: user.fullName,
-          profileImage: user.profileImage,
-          loginMethod: user.loginMethod
-        },
-        accessToken,
-        refreshToken
+      if (!user) {
+        // Check if user exists with this email
+        user = await UserModel.findOne({ email: email.toLowerCase() });
+
+        if (user) {
+          // User exists but doesn't have Google ID - link accounts
+          console.log('🔗 Linking existing email account with Google');
+          user.googleId = googleId;
+          user.googleEmail = email;
+          user.loginMethod = 'google';
+          if (!user.fullName) user.fullName = name;
+          if (!user.profileImage) user.profileImage = picture;
+          await user.save();
+        } else {
+          // Create new user with Google data
+          console.log('🆕 Creating new user with Google data');
+          user = new UserModel({
+            googleId,
+            googleEmail: email,
+            email: email.toLowerCase(),
+            fullName: name,
+            profileImage: picture,
+            loginMethod: 'google',
+            // Set default values for required fields
+            state: 'Not Specified',
+            gender: 'Not Specified',
+            age: 18
+          });
+          await user.save();
+        }
+      } else {
+        console.log('✅ Existing Google user found');
       }
-    });
+
+      // Update last login
+      user.lastLoginAt = new Date();
+      await user.save();
+
+      // Generate JWT tokens
+      const jwt = require('jsonwebtoken');
+      const accessToken = jwt.sign(
+        { id: user._id, email: user.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      const refreshToken = jwt.sign(
+        { id: user._id },
+        process.env.JWT_REFRESH_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      // Save refresh token to user
+      user.refreshToken = refreshToken;
+      user.refreshTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      await user.save();
+
+      console.log(`✅ Google login successful for: ${user.email}`);
+
+      res.status(200).json({
+        status: true,
+        message: "Google login successful",
+        data: {
+          user: {
+            id: user._id,
+            email: user.email,
+            fullName: user.fullName,
+            profileImage: user.profileImage,
+            loginMethod: user.loginMethod
+          },
+          accessToken,
+          refreshToken
+        }
+      });
+
+    } catch (googleError) {
+      console.error('❌ Google Token Verification Error:', googleError.message);
+      
+      // Provide specific error messages for common issues
+      if (googleError.message.includes('Wrong number of segments')) {
+        return res.status(400).json({
+          status: false,
+          message: "Invalid Google token format. Please try again.",
+          debug: "Token format error"
+        });
+      }
+      
+      if (googleError.message.includes('Token used too late')) {
+        return res.status(400).json({
+          status: false,
+          message: "Google token has expired. Please try again.",
+          debug: "Token expired"
+        });
+      }
+      
+      if (googleError.message.includes('Invalid audience')) {
+        return res.status(400).json({
+          status: false,
+          message: "OAuth client ID mismatch. Please check your configuration.",
+          debug: "Client ID mismatch",
+          clientId: clientId ? clientId.substring(0, 20) + '...' : 'NOT SET'
+        });
+      }
+
+      return res.status(400).json({
+        status: false,
+        message: "Google authentication failed. Please try again.",
+        debug: googleError.message
+      });
+    }
 
   } catch (error) {
-    console.error('Google Login Error:', error);
+    console.error('❌ Google Login Error:', error);
     res.status(500).json({
       status: false,
-      message: "Error during Google login",
-      error: error.message
+      message: "Internal server error during Google login",
+      debug: error.message
     });
   }
 };
@@ -1478,94 +1544,96 @@ exports.googlePreLogin = async (req, res) => {
       });
     }
 
-    // Verify Google token
+    // Debug: Log the token (first 50 characters for security)
+    console.log('🔍 Google Pre-Login Token received:', googleToken.substring(0, 50) + '...');
+    console.log('🔍 Token length:', googleToken.length);
+
+    // Verify Google token with better error handling
     const { OAuth2Client } = require('google-auth-library');
-    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    
+    // Get client ID from environment
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    console.log('🔍 Using Client ID for Pre-Login:', clientId ? clientId.substring(0, 20) + '...' : 'NOT SET');
 
-    const ticket = await client.verifyIdToken({
-      idToken: googleToken,
-      audience: process.env.GOOGLE_CLIENT_ID
-    });
+    if (!clientId) {
+      console.error('❌ GOOGLE_CLIENT_ID not configured in environment');
+      return res.status(500).json({
+        status: false,
+        message: "Google OAuth not configured properly"
+      });
+    }
 
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, name, picture } = payload;
+    const client = new OAuth2Client(clientId);
 
-    // Check if user exists with this Google ID or email
-    let user = await UserModel.findOne({ 
-      $or: [
-        { googleId },
-        { email: email.toLowerCase() }
-      ]
-    });
-
-    // Generate OTP for verification
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
-
-    // Store OTP with Google data
-    otpStore[email] = {
-      otp,
-      otpExpires,
-      googleData: { googleId, email, name, picture },
-      isGoogleLogin: true
-    };
-
-    // Send OTP via email
     try {
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Verify Your Google Sign-In',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #4285f4;">Google Sign-In Verification</h2>
-            <p>Hello ${name},</p>
-            <p>You're signing in with Google. Please use this OTP to verify your account:</p>
-            <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
-              <h1 style="color: #4285f4; font-size: 32px; margin: 0; letter-spacing: 4px;">${otp}</h1>
+      const ticket = await client.verifyIdToken({
+        idToken: googleToken,
+        audience: clientId
+      });
+
+      const payload = ticket.getPayload();
+      console.log('🔍 Google Pre-Login Payload:', {
+        sub: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        aud: payload.aud,
+        iss: payload.iss
+      });
+
+      const { sub: googleId, email, name, picture } = payload;
+
+      // Check if user exists with this Google ID or email
+      let user = await UserModel.findOne({ 
+        $or: [
+          { googleId },
+          { email: email.toLowerCase() }
+        ]
+      });
+
+      // Generate OTP for verification
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+      // Store OTP with Google data
+      otpStore[email] = {
+        otp,
+        otpExpires,
+        googleData: { googleId, email, name, picture },
+        isGoogleLogin: true
+      };
+
+      // Send OTP via email
+      try {
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: email,
+          subject: 'Verify Your Google Sign-In',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #4285f4;">Google Sign-In Verification</h2>
+              <p>Hello ${name},</p>
+              <p>You're signing in with Google. Please use this OTP to verify your account:</p>
+              <div style="background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0;">
+                <h1 style="color: #4285f4; font-size: 32px; margin: 0; letter-spacing: 4px;">${otp}</h1>
+              </div>
+              <p><strong>This OTP expires in 5 minutes.</strong></p>
+              <p>If you didn't request this sign-in, please ignore this email.</p>
+              <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+              <p style="color: #666; font-size: 12px;">This is an automated message from your app.</p>
             </div>
-            <p><strong>This OTP expires in 5 minutes.</strong></p>
-            <p>If you didn't request this sign-in, please ignore this email.</p>
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-            <p style="color: #666; font-size: 12px;">This is an automated message from your app.</p>
-          </div>
-        `
-      });
+          `
+        });
 
-      console.log(`✅ Google pre-login OTP sent to: ${email}`);
+        console.log(`✅ OTP sent to ${email} for Google pre-login`);
 
-      res.status(200).json({
-        status: true,
-        message: "OTP sent to your email for verification",
-        data: {
-          user: {
-            name,
-            email,
-            picture,
-            isNewUser: !user,
-            existingUser: user ? {
-              id: user._id,
-              fullName: user.fullName,
-              profileImage: user.profileImage,
-              loginMethod: user.loginMethod
-            } : null
-          }
-        }
-      });
-
-    } catch (emailError) {
-      console.error('Email sending error:', emailError);
-      
-      // In development, return OTP in response
-      if (process.env.NODE_ENV === 'development') {
         res.status(200).json({
           status: true,
-          message: "OTP sent (development mode)",
+          message: "OTP sent successfully",
           data: {
             user: {
               name,
               email,
-              picture,
+              profileImage: picture,
               isNewUser: !user,
               existingUser: user ? {
                 id: user._id,
@@ -1573,24 +1641,86 @@ exports.googlePreLogin = async (req, res) => {
                 profileImage: user.profileImage,
                 loginMethod: user.loginMethod
               } : null
-            },
-            otp: otp // Only in development
+            }
           }
         });
-      } else {
-        res.status(500).json({
+
+      } catch (emailError) {
+        console.error('❌ Email sending failed:', emailError);
+        
+        // In development, return OTP in response
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔧 Development mode: Returning OTP in response');
+          res.status(200).json({
+            status: true,
+            message: "OTP sent successfully (development mode)",
+            data: {
+              user: {
+                name,
+                email,
+                profileImage: picture,
+                isNewUser: !user,
+                existingUser: user ? {
+                  id: user._id,
+                  fullName: user.fullName,
+                  profileImage: user.profileImage,
+                  loginMethod: user.loginMethod
+                } : null
+              },
+              otp: otp // Only in development
+            }
+          });
+        } else {
+          res.status(500).json({
+            status: false,
+            message: "Failed to send OTP email",
+            debug: emailError.message
+          });
+        }
+      }
+
+    } catch (googleError) {
+      console.error('❌ Google Token Verification Error in Pre-Login:', googleError.message);
+      
+      // Provide specific error messages for common issues
+      if (googleError.message.includes('Wrong number of segments')) {
+        return res.status(400).json({
           status: false,
-          message: "Failed to send OTP email"
+          message: "Invalid Google token format. Please try again.",
+          debug: "Token format error"
         });
       }
+      
+      if (googleError.message.includes('Token used too late')) {
+        return res.status(400).json({
+          status: false,
+          message: "Google token has expired. Please try again.",
+          debug: "Token expired"
+        });
+      }
+      
+      if (googleError.message.includes('Invalid audience')) {
+        return res.status(400).json({
+          status: false,
+          message: "OAuth client ID mismatch. Please check your configuration.",
+          debug: "Client ID mismatch",
+          clientId: clientId ? clientId.substring(0, 20) + '...' : 'NOT SET'
+        });
+      }
+
+      return res.status(400).json({
+        status: false,
+        message: "Google authentication failed. Please try again.",
+        debug: googleError.message
+      });
     }
 
   } catch (error) {
-    console.error('Google Pre-Login Error:', error);
+    console.error('❌ Google Pre-Login Error:', error);
     res.status(500).json({
       status: false,
-      message: "Error during Google pre-login",
-      error: error.message
+      message: "Internal server error during Google pre-login",
+      debug: error.message
     });
   }
 };
@@ -1786,6 +1916,48 @@ exports.testEmail = async (req, res) => {
       error: error.message,
       emailUser: process.env.EMAIL_USER ? 'Set' : 'Not set',
       emailPassword: process.env.EMAIL_PASS ? 'Set' : 'Not set'
+    });
+  }
+};
+
+// Check Google OAuth Configuration
+exports.checkGoogleConfig = async (req, res) => {
+  try {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const emailUser = process.env.EMAIL_USER;
+    const emailPassword = process.env.EMAIL_PASSWORD;
+    
+    const config = {
+      googleClientId: clientId ? {
+        exists: true,
+        length: clientId.length,
+        preview: clientId.substring(0, 20) + '...',
+        endsWith: clientId.endsWith('.apps.googleusercontent.com') ? 'Valid format' : 'Invalid format'
+      } : {
+        exists: false,
+        error: 'GOOGLE_CLIENT_ID not set'
+      },
+      emailConfig: {
+        user: emailUser ? 'Set' : 'Not set',
+        password: emailPassword ? 'Set' : 'Not set'
+      },
+      environment: process.env.NODE_ENV || 'development'
+    };
+
+    console.log('🔍 Configuration Check:', config);
+
+    res.status(200).json({
+      status: true,
+      message: "Configuration check completed",
+      data: config
+    });
+
+  } catch (error) {
+    console.error('❌ Configuration Check Error:', error);
+    res.status(500).json({
+      status: false,
+      message: "Error checking configuration",
+      debug: error.message
     });
   }
 };
