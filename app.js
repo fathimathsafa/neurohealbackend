@@ -5,8 +5,11 @@ const path = require('path'); // ✅ Add this line
 
 const cors = require('cors');
 const body_parser = require('body-parser');
+const session = require('express-session');
+const passport = require('./config/passport');
 const userRouter = require('./routers/user.routes');
 const messageRouter = require('./routers/message.routes');
+const authRoutes = require('./routers/auth.routes');
 //const { getAllPsychologists } = require('./admin_module/psychologist_listing/psychologist_listing_controller');
 
 const app = express();
@@ -14,6 +17,18 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(body_parser.json());
+
+// Session middleware
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false } // Set to true in production with HTTPS
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Request logger middleware
 app.use((req, res, next) => {
@@ -52,6 +67,7 @@ if (!fs.existsSync(messagesUploadDir)) {
 // Main routes
 app.use('/', userRouter);
 app.use('/messages', messageRouter);
+app.use('/auth', authRoutes);
 
 // 🛑 404 fallback route
 app.use((req, res, next) => {

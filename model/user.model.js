@@ -12,6 +12,12 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
   phone: { type: String, trim: true },
+  // Google OAuth fields
+  googleId: { 
+    type: String, 
+    unique: true, 
+    sparse: true 
+  },
   // New registration fields
   state: { 
     type: String, 
@@ -38,7 +44,7 @@ const userSchema = new mongoose.Schema({
   // Google OAuth fields
   loginMethod: {
     type: String,
-    enum: ['password', 'otp'],
+    enum: ['password', 'otp', 'google'],
     default: 'password'
   },
   refreshToken: {
