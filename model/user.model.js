@@ -12,23 +12,6 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
   phone: { type: String, trim: true },
-  // New registration fields
-  state: { 
-    type: String, 
-    trim: true,
-    required: true 
-  },
-  gender: { 
-    type: String, 
-    trim: true,
-    required: true 
-  },
-  age: { 
-    type: Number, 
-    min: 13, 
-    max: 120,
-    required: true 
-  },
   password: { type: String },
   otp: { type: String },
   otpExpires: { type: Date },

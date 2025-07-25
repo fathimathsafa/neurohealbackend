@@ -23,9 +23,9 @@ const transporter = nodemailer.createTransport({
 
 // ✅ Step 1: Pre-register (send OTP)
 exports.preRegister = async (req, res) => {
-  const { fullName, email, phone, password, confirmPassword, state, gender, age } = req.body;
+  const { fullName, email, phone, password, confirmPassword } = req.body;
 
-  if (!fullName || !email || !phone || !password || !confirmPassword || !state || !gender || !age)
+  if (!fullName || !email || !phone || !password || !confirmPassword)
     return res.status(400).json({ message: "All fields are required" });
 
   if (!email.includes('@'))
