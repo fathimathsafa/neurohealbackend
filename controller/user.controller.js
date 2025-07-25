@@ -37,11 +37,6 @@ exports.preRegister = async (req, res) => {
   if (password !== confirmPassword)
     return res.status(400).json({ message: "Passwords do not match" });
 
-  // Validate age
-  const ageNum = parseInt(age);
-  if (isNaN(ageNum) || ageNum < 13 || ageNum > 120)
-    return res.status(400).json({ message: "Age must be between 13 and 120 years" });
-
   try {
     const user = await UserModel.findOne({ email });
     if (user && user.password)
@@ -53,7 +48,7 @@ exports.preRegister = async (req, res) => {
     otpStore[email] = {
       otp,
       otpExpires,
-      userData: { fullName, email, phone, password, state, gender, age: ageNum }
+      userData: { fullName, email, phone, password }
     };
 
     await transporter.sendMail({
@@ -91,17 +86,14 @@ exports.register = async (req, res) => {
     if (existingUser && existingUser.password)
       return res.status(400).json({ message: "User already registered" });
 
-    const { fullName, phone, password, state, gender, age } = otpEntry.userData;
+    const { fullName, phone, password } = otpEntry.userData;
     const hashedPassword = await bcrypt.hash(password, 10); // ✅ hash
 
-      const newUser = new UserModel({
+    const newUser = new UserModel({
       fullName,
       email,
       phone,
-      state,
-      gender,
-      age,
-      password, // plain password; will be hashed in model
+      password: hashedPassword, // store hashed password
       loginMethod: 'password'
     });
     await newUser.save();
@@ -115,9 +107,7 @@ exports.register = async (req, res) => {
       user: {
         email: newUser.email,
         fullName: newUser.fullName,
-        state: newUser.state,
-        gender: newUser.gender,
-        age: newUser.age
+        phone: newUser.phone
       }
     });
   } catch (err) {
@@ -743,51 +733,30 @@ exports.deleteUser = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
-    
     if (!userId) {
       return res.status(401).json({ message: "User not authenticated" });
     }
-
-    const { fullName, phone, state, gender, age } = req.body;
-
-    // Validate age if provided
-    if (age) {
-      const ageNum = parseInt(age);
-      if (isNaN(ageNum) || ageNum < 13 || ageNum > 120) {
-        return res.status(400).json({ message: "Age must be between 13 and 120 years" });
-      }
-    }
-
+    const { fullName, phone } = req.body;
     const updateData = {};
     if (fullName) updateData.fullName = fullName;
     if (phone) updateData.phone = phone;
-    if (state) updateData.state = state;
-    if (gender) updateData.gender = gender;
-    if (age) updateData.age = parseInt(age);
-
     const user = await UserModel.findByIdAndUpdate(
       userId,
       updateData,
       { new: true }
     ).select('-password -refreshToken -otp -otpExpires');
-
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-
     res.status(200).json({
       message: "Profile updated successfully",
       user: {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
-        phone: user.phone,
-        state: user.state,
-        gender: user.gender,
-        age: user.age
+        phone: user.phone
       }
     });
-
   } catch (err) {
     console.error('Update Profile Error:', err);
     res.status(500).json({ message: "Server error updating profile" });
