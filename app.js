@@ -7,7 +7,6 @@ const cors = require('cors');
 const body_parser = require('body-parser');
 const userRouter = require('./routers/user.routes');
 const messageRouter = require('./routers/message.routes');
-const firebaseAuthRouter = require('./routers/firebase-auth.routes');
 //const { getAllPsychologists } = require('./admin_module/psychologist_listing/psychologist_listing_controller');
 
 const app = express();
@@ -53,7 +52,15 @@ if (!fs.existsSync(messagesUploadDir)) {
 // Main routes
 app.use('/', userRouter);
 app.use('/messages', messageRouter);
-app.use('/firebase-auth', firebaseAuthRouter);
+
+// Firebase routes (lazy-loaded after environment variables are set)
+try {
+  const firebaseAuthRouter = require('./routers/firebase-auth.routes');
+  app.use('/firebase-auth', firebaseAuthRouter);
+  console.log('✅ Firebase authentication routes loaded');
+} catch (error) {
+  console.error('❌ Failed to load Firebase routes:', error.message);
+}
 
 // 🛑 404 fallback route
 app.use((req, res, next) => {
