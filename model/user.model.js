@@ -12,8 +12,8 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
   phone: { type: String, trim: true },
-  // Google OAuth fields
-  googleId: { 
+  // Firebase Authentication fields
+  firebaseUid: { 
     type: String, 
     unique: true, 
     sparse: true 
@@ -41,10 +41,10 @@ const userSchema = new mongoose.Schema({
   // Password reset fields
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
-  // Google OAuth fields
+  // Login method
   loginMethod: {
     type: String,
-    enum: ['password', 'otp', 'google'],
+    enum: ['password', 'otp', 'firebase'],
     default: 'password'
   },
   refreshToken: {

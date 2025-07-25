@@ -20,7 +20,7 @@ const followUpQuestions = {
   "Myself": [
     {
       question: "What is your age?",
-      options: ["18 to 30", "30 to 45", "45 to 60", "60 and above"]
+      options: ["13 to 18", "18 to 30", "30 to 45", "45 to 60","60 and above"]
     },
     {
       question: "What is your gender?",
@@ -28,23 +28,23 @@ const followUpQuestions = {
       expandedOptions: ["Non Binary", "Transmasculine", "Agender", "Not sure", "Other", "Transfeminine"]
     },
     {
-      question: "Have you ever been in therapy or consulting before?",
+      question: "Have you ever been in therapy or counselling before?",
       options: ["Yes", "No"]
     },
     {
-      question: "What made you consider consulting today?",
+      question: "What made you consider Therapy today?",
       options: [
         "I have been going through tough times emotionally",
         "I am navigating challenges related to addiction and substance abuse",
         "I feel depressed",
-        "I have been having trouble sleeping",
+        "I have been  trouble sleeping",
         "My low mood is interfering with my daily life",
         "I have been feeling anxious or overwhelmed",
-        "I feel my life is empty and directionless",
+        "I feel my life  empty and directionless",
         "I want to talk about specific challenges",
         "I want to heal from my trauma",
         "I want to gain self-confidence",
-        "I want to improve myself but need a supportive hand along the way",
+        "I want to improve myself but i need a supportive hand along the way",
         "I am going through a period of deep sadness",
         "Other"
       ],
@@ -62,14 +62,14 @@ const followUpQuestions = {
         "Explores my past",
         "Proactively follows up to support my progress",
         "Helps me clarify and set meaningful goals",
-        "Understands trauma and provides safe environment",
+        "Understands trauma and provides safe supportive environment",
         "Helps me manage stress and return to a peaceful state after emotional release",
-        "Other"
+        "Others"
       ],
       allowMultiple: true
     },
     {
-      question: "Are you currently experiencing anxiety, panic attacks, or any other phobia?",
+      question: "Are you currently experiencing anxiety, panic attacks, or any phobia?",
       options: ["Yes", "No"]
     },
     {
@@ -84,18 +84,18 @@ const followUpQuestions = {
       ],
       allowMultiple: true
     },
-    {
-      question: "What is the main reason you are seeking support?",
-      options: ["Stress", "Anxiety", "Sleep issues", "Depression", "Relationship issues", "Other"]
-    },
-    {
-      question: "What is your relationship status?",
-      options: ["Married", "Unmarried", "Living together", "Divorced", "Widowed", "Prefer not to say"]
-    },
-    {
-      question: "What kind of therapy are you open to?",
-      options: ["Talk Therapy", "CBT", "Mindfulness Based", "EMDR", "Not sure", "Open to recommendations"]
-    }
+    // {
+    //   question: "What is the main reason you are seeking support?",
+    //   options: ["Stress", "Anxiety", "Sleep issues", "Depression", "Relationship issues", "Other"]
+    // },
+    // {
+    //   question: "What is your relationship status?",
+    //   options: ["Married", "Unmarried", "Living together", "Divorced", "Widowed", "Prefer not to say"]
+    // },
+    // {
+    //   question: "What kind of therapy are you open to?",
+    //   options: ["Talk Therapy", "CBT", "Mindfulness Based", "EMDR", "Not sure", "Open to recommendations"]
+    // }
   ],
   "My child": [
     {
