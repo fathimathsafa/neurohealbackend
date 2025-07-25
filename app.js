@@ -53,14 +53,7 @@ if (!fs.existsSync(messagesUploadDir)) {
 app.use('/', userRouter);
 app.use('/messages', messageRouter);
 
-// Firebase routes (lazy-loaded after environment variables are set)
-try {
-  const firebaseAuthRouter = require('./routers/firebase-auth.routes');
-  app.use('/firebase-auth', firebaseAuthRouter);
-  console.log('✅ Firebase authentication routes loaded');
-} catch (error) {
-  console.error('❌ Failed to load Firebase routes:', error.message);
-}
+
 
 // 🛑 404 fallback route
 app.use((req, res, next) => {

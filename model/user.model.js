@@ -12,12 +12,6 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
   phone: { type: String, trim: true },
-  // Firebase Authentication fields
-  firebaseUid: { 
-    type: String, 
-    unique: true, 
-    sparse: true 
-  },
   // New registration fields
   state: { 
     type: String, 
@@ -44,7 +38,7 @@ const userSchema = new mongoose.Schema({
   // Login method
   loginMethod: {
     type: String,
-    enum: ['password', 'otp', 'firebase'],
+    enum: ['password', 'otp'],
     default: 'password'
   },
   refreshToken: {
