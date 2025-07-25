@@ -12,6 +12,10 @@ const userSchema = new mongoose.Schema({
     trim: true,
   },
   phone: { type: String, trim: true },
+  // Optional profile completion fields
+  age: { type: Number, min: 13, max: 120, required: false, default: null },
+  gender: { type: String, trim: true, required: false, default: null },
+  state: { type: String, trim: true, required: false, default: null },
   password: { type: String },
   otp: { type: String },
   otpExpires: { type: Date },

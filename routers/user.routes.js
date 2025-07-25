@@ -86,6 +86,12 @@ router.get('/profile', verifyToken, async (req, res) => {
 // Update user profile
 router.put('/profile', verifyToken, userController.updateProfile);
 
+// Add/Update profile details (age, gender, state, profileImage)
+router.put('/profile-details', verifyToken, userController.updateProfileDetails);
+
+// Get profile (with all fields)
+router.get('/profile-full', verifyToken, userController.getProfile);
+
 // Store who recommended this app
 router.post('/recommendation-source', verifyToken, userController.storeRecommendationSource);
 router.get('/recommendation-source', verifyToken, userController.getRecommendationSource);

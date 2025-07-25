@@ -5,6 +5,8 @@ const nodemailer = require('nodemailer');
 require('dotenv').config();
 const Psychologist = require('../admin_module/psychologist_adding/psychologist_adding_model');
 const BookingModel = require('../user_module/psychologist_booking/psychologist_booking_model');
+const multer = require('multer');
+const path = require('path');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -20,6 +22,18 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS,
   },
 });
+
+// Multer config for profile image upload
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, '../uploads/profile_images'));
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${file.fieldname}${ext}`);
+  }
+});
+const upload = multer({ storage });
 
 // ✅ Step 1: Pre-register (send OTP)
 exports.preRegister = async (req, res) => {
@@ -760,6 +774,77 @@ exports.updateProfile = async (req, res) => {
   } catch (err) {
     console.error('Update Profile Error:', err);
     res.status(500).json({ message: "Server error updating profile" });
+  }
+};
+
+// PUT /user/profile-details
+exports.updateProfileDetails = [upload.single('profileImage'), async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+    const { age, gender, state } = req.body;
+    const updateData = {};
+    if (age) updateData.age = parseInt(age);
+    if (gender) updateData.gender = gender;
+    if (state) updateData.state = state;
+    if (req.file) {
+      updateData.profileImage = `/uploads/profile_images/${req.file.filename}`;
+    }
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      updateData,
+      { new: true }
+    ).select('-password -refreshToken -otp -otpExpires');
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.status(200).json({
+      message: "Profile details updated successfully",
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone,
+        age: user.age,
+        gender: user.gender,
+        state: user.state,
+        profileImage: user.profileImage
+      }
+    });
+  } catch (err) {
+    console.error('Update Profile Details Error:', err);
+    res.status(500).json({ message: "Server error updating profile details" });
+  }
+}];
+
+// Update getProfile (or similar) to include these fields
+exports.getProfile = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+    const user = await UserModel.findById(userId).select('-password -refreshToken -otp -otpExpires');
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.status(200).json({
+      user: {
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName,
+        phone: user.phone,
+        age: user.age,
+        gender: user.gender,
+        state: user.state,
+        profileImage: user.profileImage
+      }
+    });
+  } catch (err) {
+    console.error('Get Profile Error:', err);
+    res.status(500).json({ message: "Server error fetching profile" });
   }
 };
 
