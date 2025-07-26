@@ -49,6 +49,18 @@ if (!fs.existsSync(messagesUploadDir)) {
 //   });
 // });
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'NeuroHeal Backend API is running!',
+    status: 'success',
+    endpoints: {
+      auth: '/user',
+      messages: '/messages'
+    }
+  });
+});
+
 // Main routes
 app.use('/', userRouter);
 app.use('/messages', messageRouter);
