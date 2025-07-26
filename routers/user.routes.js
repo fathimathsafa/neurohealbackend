@@ -340,7 +340,9 @@ router.get('/booking-options', controller.getBookingOptions);
 router.get('/specializations', controller.getSpecializations);
 router.get('/follow-up/:selectedOption', controller.getFollowUpQuestions);
 
-// router.get('/user-status', verifyToken, controller.getUserStatus);
+router.get('/user-status', verifyToken, (req, res) => {
+  res.json({ message: "Test route working" });
+});
 router.post('/submit', verifyToken, controller.saveResponses);
 
 // New endpoints for returning users
