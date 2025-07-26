@@ -19,15 +19,6 @@ const bookingOptions = ["Myself", "My child", "Couples", "My loved ones"];
 const followUpQuestions = {
   "Myself": [
     {
-      question: "What is your age?",
-      options: ["13 to 18", "18 to 30", "30 to 45", "45 to 60","60 and above"]
-    },
-    {
-      question: "What is your gender?",
-      options: ["Male", "Female", "Not prefer to say", "More"],
-      expandedOptions: ["Non Binary", "Transmasculine", "Agender", "Not sure", "Other", "Transfeminine"]
-    },
-    {
       question: "Have you ever been in therapy or counselling before?",
       options: ["Yes", "No"]
     },
@@ -56,7 +47,7 @@ const followUpQuestions = {
       placeholder: "Please describe your sleep pattern in your own words..."
     },
     {
-      question: "What traits are important to you in a therapist?",
+      question: "What traits are most important to you in a therapist?",
       options: [
         "Listens with patience and understanding",
         "Explores my past",
@@ -99,17 +90,8 @@ const followUpQuestions = {
   ],
   "My child": [
     {
-      question: "What is your child's age range?",
-      options: ["0-5", "6-10", "11-15", "16-18"]
-    },
-    {
       question: "What concerns do you have about your child?",
       options: ["Behavioral", "Academic", "Emotional", "Social", "Developmental", "Other"]
-    },
-    {
-      question: "What is your child's gender?",
-      options: ["Male", "Female", "Not prefer to say", "More"],
-      expandedOptions: ["Non Binary", "Transmasculine", "Agender", "Not sure", "Other", "Transfeminine"]
     },
     {
       question: "Has your child been in therapy before?",
@@ -201,11 +183,7 @@ exports.getFollowUpQuestions = (req, res) => {
   res.json(questions);
 };
 
-// GET /api/questions/expanded-gender-options
-exports.getExpandedGenderOptions = (req, res) => {
-  const expandedOptions = ["Non Binary", "Transmasculine", "Agender", "Not sure", "Other", "Transfeminine"];
-  res.json(expandedOptions);
-};
+
 
 // GET /api/questions/user-status - Check if user is first-time
 exports.getUserStatus = async (req, res) => {
@@ -250,14 +228,29 @@ exports.saveResponses = async (req, res) => {
       return res.status(401).json({ error: "Invalid authentication token" });
     }
 
-    const { state, bookingFor, followUpAnswers } = req.body;
+    const { bookingFor, followUpAnswers } = req.body;
 
     console.log("💾 Saving response for user:", userId);
+
+    // Get user's profile data (state, age, gender) from their profile
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Use user's profile state instead of asking in questionnaire
+    const userState = user.state;
+    if (!userState) {
+      return res.status(400).json({ 
+        error: "Please complete your profile first. State is required for booking.",
+        message: "Please go to your profile and add your state before proceeding with the questionnaire."
+      });
+    }
 
     // Save questionnaire response
     const savedResponse = await UserResponse.create({
       userId,
-      state,
+      state: userState, // Use user's profile state
       bookingFor,
       followUpAnswers
     });
@@ -269,7 +262,6 @@ exports.saveResponses = async (req, res) => {
       console.log("🔍 Starting automatic psychologist matching...");
       
       // Check if user has already had an automatic booking
-      const user = await User.findById(userId);
       if (user.hasHadAutomaticBooking) {
         console.log("⚠️ User has already had an automatic booking, skipping automatic booking creation");
         
@@ -277,7 +269,7 @@ exports.saveResponses = async (req, res) => {
         await User.findByIdAndUpdate(userId, {
           isFirstTimeUser: false,
           hasCompletedQuestionnaire: true,
-          preferredState: state,
+          preferredState: userState, // Use user's profile state
           preferredSpecialization: PsychologistMatchingService.getSpecializationFromBooking(bookingFor)
         });
 
@@ -295,7 +287,7 @@ exports.saveResponses = async (req, res) => {
       
       // Find the best psychologist for the user using enhanced matching
       const matchResult = await PsychologistMatchingService.findBestPsychologistEnhanced(
-        state, 
+        userState, // Use user's profile state
         bookingFor, 
         userId
       );
@@ -308,7 +300,7 @@ exports.saveResponses = async (req, res) => {
       await User.findByIdAndUpdate(userId, {
         isFirstTimeUser: false,
         hasCompletedQuestionnaire: true,
-        preferredState: state,
+        preferredState: userState, // Use user's profile state
         preferredSpecialization: PsychologistMatchingService.getSpecializationFromBooking(bookingFor)
       });
 
@@ -322,7 +314,7 @@ exports.saveResponses = async (req, res) => {
           userId,
           matchedPsychologist._id,
           {
-            state,
+            state: userState, // Use user's profile state
             bookingFor,
             followUpAnswers
           }
