@@ -339,8 +339,8 @@ router.get('/states', controller.getStates);
 router.get('/booking-options', controller.getBookingOptions);
 router.get('/specializations', controller.getSpecializations);
 router.get('/follow-up/:selectedOption', controller.getFollowUpQuestions);
-router.get('/expanded-gender-options', controller.getExpandedGenderOptions);
-router.get('/user-status', verifyToken, controller.getUserStatus);
+
+// router.get('/user-status', verifyToken, controller.getUserStatus);
 router.post('/submit', verifyToken, controller.saveResponses);
 
 // New endpoints for returning users
