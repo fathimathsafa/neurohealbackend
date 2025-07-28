@@ -1,6 +1,7 @@
 const UserResponse = require('../questions/questions_model');
 const PsychologistMatchingService = require('../../services/psychologist_matching_service');
 const User = require('../../model/user.model');
+// No need for booking controller import - using PsychologistMatchingService
 
 // 28 Indian states
 const states = [
@@ -212,10 +213,10 @@ exports.getUserStatus = async (req, res) => {
   }
 };
 
-// POST /api/questions/submit - WITH AUTHENTICATION AND AUTOMATIC BOOKING
+// POST /api/questions/submit - SAVE QUESTIONNAIRE ONLY (NO AUTOMATIC BOOKING)
 exports.saveResponses = async (req, res) => {
   try {
-    console.log("📥 Received submission request");
+    console.log("📥 Received questionnaire submission request");
     console.log("Headers:", req.headers);
     console.log("Body:", req.body);
     console.log("User from token:", req.user);
@@ -230,7 +231,7 @@ exports.saveResponses = async (req, res) => {
 
     const { bookingFor, followUpAnswers } = req.body;
 
-    console.log("💾 Saving response for user:", userId);
+    console.log("💾 Saving questionnaire response for user:", userId);
 
     // Get user's profile data (state, age, gender) from their profile
     const user = await User.findById(userId);
@@ -255,140 +256,27 @@ exports.saveResponses = async (req, res) => {
       followUpAnswers
     });
 
-    console.log("✅ Response saved successfully:", savedResponse);
+    console.log("✅ Questionnaire response saved successfully:", savedResponse);
 
-    // 🎯 AUTOMATIC PSYCHOLOGIST MATCHING AND BOOKING (FIRST-TIME USERS ONLY)
-    try {
-      console.log("🔍 Starting automatic psychologist matching...");
-      
-      // Check if user has already had an automatic booking
-      if (user.hasHadAutomaticBooking) {
-        console.log("⚠️ User has already had an automatic booking, skipping automatic booking creation");
-        
-        // Update user status to mark as not first-time and save preferences
-        await User.findByIdAndUpdate(userId, {
-          isFirstTimeUser: false,
-          hasCompletedQuestionnaire: true,
-          preferredState: userState, // Use user's profile state
-          preferredSpecialization: PsychologistMatchingService.getSpecializationFromBooking(bookingFor)
-        });
+    // Update user status to mark as not first-time and save preferences
+    await User.findByIdAndUpdate(userId, {
+      isFirstTimeUser: false,
+      hasCompletedQuestionnaire: true,
+      preferredState: userState, // Use user's profile state
+      preferredSpecialization: PsychologistMatchingService.getSpecializationFromBooking(bookingFor)
+    });
 
-        // Return success without creating booking
-        res.status(201).json({
-          success: true,
-          message: "Questionnaire submitted successfully. You have already had an automatic booking.",
-          isFirstTimeUser: false,
-          questionnaireResponse: savedResponse,
-          booking: null,
-          psychologist: null
-        });
-        return;
-      }
-      
-      // Find the best psychologist for the user using enhanced matching
-      const matchResult = await PsychologistMatchingService.findBestPsychologistEnhanced(
-        userState, // Use user's profile state
-        bookingFor, 
-        userId
-      );
-
-      console.log("📋 Match type:", matchResult.matchType);
-      console.log("💬 Message:", matchResult.message);
-      console.log("🔐 Should book:", matchResult.shouldBook);
-
-      // Update user status to mark as not first-time and save preferences
-      await User.findByIdAndUpdate(userId, {
-        isFirstTimeUser: false,
-        hasCompletedQuestionnaire: true,
-        preferredState: userState, // Use user's profile state
-        preferredSpecialization: PsychologistMatchingService.getSpecializationFromBooking(bookingFor)
-      });
-
-      // Only create booking if psychologist is found in user's state
-      if (matchResult.shouldBook && matchResult.psychologist) {
-        const matchedPsychologist = matchResult.psychologist;
-        console.log("✅ Psychologist matched:", matchedPsychologist.name);
-
-        // Create automatic booking
-        const automaticBooking = await PsychologistMatchingService.createAutomaticBooking(
-          userId,
-          matchedPsychologist._id,
-          {
-            state: userState, // Use user's profile state
-            bookingFor,
-            followUpAnswers
-          }
-        );
-
-        // Mark user as having had an automatic booking
-        await User.findByIdAndUpdate(userId, {
-          hasHadAutomaticBooking: true
-        });
-
-        // Get psychologist details with image URL
-        const psychologistDetails = await PsychologistMatchingService.getPsychologistWithImage(
-          matchedPsychologist._id,
-          req
-        );
-
-        console.log("✅ Automatic booking completed successfully");
-
-        // Return success response with booking details
-        res.status(201).json({
-          success: true,
-          message: matchResult.message,
-          isFirstTimeUser: false,
-          matchType: matchResult.matchType,
-          questionnaireResponse: savedResponse,
-          booking: {
-            id: automaticBooking._id,
-            date: automaticBooking.date,
-            time: automaticBooking.time,
-            status: automaticBooking.status
-          },
-          psychologist: {
-            id: psychologistDetails._id,
-            name: psychologistDetails.name,
-            specialization: psychologistDetails.specialization,
-            clinicName: psychologistDetails.clinicName,
-            state: psychologistDetails.state,
-            image: psychologistDetails.image,
-            rating: psychologistDetails.rating,
-            experienceYears: psychologistDetails.experienceYears,
-            hourlyRate: psychologistDetails.hourlyRate
-          }
-        });
-      } else {
-        // No psychologist in state - just save questionnaire
-        console.log("✅ Questionnaire saved, no booking created");
-
-        res.status(201).json({
-          success: true,
-          message: matchResult.message,
-          isFirstTimeUser: false,
-          matchType: matchResult.matchType,
-          questionnaireResponse: savedResponse,
-          booking: null,
-          psychologist: null
-        });
-      }
-
-    } catch (matchingError) {
-      console.error("❌ Psychologist matching failed:", matchingError);
-      
-      // Still return success for questionnaire submission, but with error for booking
-      res.status(201).json({
-        success: true,
-        message: "Questionnaire submitted successfully, but automatic booking failed",
-        questionnaireResponse: savedResponse,
-        bookingError: matchingError.message,
-        suggestion: "Please contact support for manual booking assistance"
-      });
-    }
+    // Return success with questionnaire response only
+    res.status(201).json({
+      success: true,
+      message: "Questionnaire submitted successfully!",
+      questionnaireResponse: savedResponse,
+      canCheckBooking: true // Flag to indicate frontend can check for booking availability
+    });
     
   } catch (error) {
     console.error("❌ Save Error:", error);
-    res.status(500).json({ error: "Failed to save responses", details: error.message });
+    res.status(500).json({ error: "Failed to save questionnaire responses", details: error.message });
   }
 };
 
@@ -418,5 +306,206 @@ exports.saveResponsesNoAuth = async (req, res) => {
   } catch (error) {
     console.error("❌ Save Error:", error);
     res.status(500).json({ error: "Failed to save responses", details: error.message });
+  }
+};
+
+// GET /api/questions/check-booking-availability - Check if automatic booking is possible
+exports.checkBookingAvailability = async (req, res) => {
+  try {
+    console.log("🔍 Checking booking availability...");
+    
+    const userId = req.user?.id || req.user?._id || req.user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ error: "Invalid authentication token" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Check if user has already had an automatic booking
+    if (user.hasHadAutomaticBooking) {
+      return res.status(200).json({
+        canBook: false,
+        message: "You have already had an automatic booking.",
+        reason: "already_booked"
+      });
+    }
+
+    // Check if user has completed questionnaire
+    if (!user.hasCompletedQuestionnaire) {
+      return res.status(200).json({
+        canBook: false,
+        message: "Please complete the questionnaire first.",
+        reason: "questionnaire_not_completed"
+      });
+    }
+
+    // Check if user has state in profile
+    if (!user.state) {
+      return res.status(200).json({
+        canBook: false,
+        message: "Please complete your profile with your state first.",
+        reason: "state_not_provided"
+      });
+    }
+
+    // Find the best psychologist for the user
+    const matchResult = await PsychologistMatchingService.findBestPsychologistEnhanced(
+      user.state,
+      user.preferredSpecialization || "General", 
+      userId
+    );
+
+    if (matchResult.shouldBook && matchResult.psychologist) {
+      // Get psychologist details with image URL
+      const psychologistDetails = await PsychologistMatchingService.getPsychologistWithImage(
+        matchResult.psychologist._id,
+        req
+      );
+
+      return res.status(200).json({
+        canBook: true,
+        message: "Automatic booking is available!",
+        psychologist: {
+          id: psychologistDetails._id,
+          name: psychologistDetails.name,
+          specialization: psychologistDetails.specialization,
+          clinicName: psychologistDetails.clinicName,
+          state: psychologistDetails.state,
+          image: psychologistDetails.image,
+          rating: psychologistDetails.rating,
+          experienceYears: psychologistDetails.experienceYears,
+          hourlyRate: psychologistDetails.hourlyRate,
+          description: psychologistDetails.description || "Experienced psychologist"
+        },
+        matchType: matchResult.matchType,
+        estimatedTime: "Within 24-48 hours"
+      });
+    } else {
+      return res.status(200).json({
+        canBook: false,
+        message: matchResult.message || "No suitable psychologist available in your state at the moment.",
+        reason: "no_psychologist_available",
+        suggestion: "Please try again later or contact support for manual booking assistance."
+      });
+    }
+
+  } catch (error) {
+    console.error("❌ Check booking availability error:", error);
+    res.status(500).json({ 
+      error: "Failed to check booking availability", 
+      details: error.message 
+    });
+  }
+};
+
+// POST /api/questions/create-automatic-booking - Create automatic booking on demand
+exports.createAutomaticBooking = async (req, res) => {
+  try {
+    console.log("🎯 Creating automatic booking on demand...");
+    
+    const userId = req.user?.id || req.user?._id || req.user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ error: "Invalid authentication token" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Check if user has already had an automatic booking
+    if (user.hasHadAutomaticBooking) {
+      return res.status(400).json({
+        success: false,
+        message: "You have already had an automatic booking.",
+        reason: "already_booked"
+      });
+    }
+
+    // Check if user has completed questionnaire
+    if (!user.hasCompletedQuestionnaire) {
+      return res.status(400).json({
+        success: false,
+        message: "Please complete the questionnaire first.",
+        reason: "questionnaire_not_completed"
+      });
+    }
+
+    // Find the best psychologist for the user
+    const matchResult = await PsychologistMatchingService.findBestPsychologistEnhanced(
+      user.state,
+      user.preferredSpecialization || "General", 
+      userId
+    );
+
+    if (!matchResult.shouldBook || !matchResult.psychologist) {
+      return res.status(400).json({
+        success: false,
+        message: matchResult.message || "No suitable psychologist available for automatic booking.",
+        reason: "no_psychologist_available"
+      });
+    }
+
+    const matchedPsychologist = matchResult.psychologist;
+
+    // Create automatic booking
+    const automaticBooking = await PsychologistMatchingService.createAutomaticBooking(
+      userId,
+      matchedPsychologist._id,
+      {
+        state: user.state,
+        bookingFor: user.preferredSpecialization || "General",
+        followUpAnswers: {} // We don't have the original answers here, but that's okay
+      }
+    );
+
+    // Mark user as having had an automatic booking
+    await User.findByIdAndUpdate(userId, {
+      hasHadAutomaticBooking: true
+    });
+
+    // Get psychologist details with image URL
+    const psychologistDetails = await PsychologistMatchingService.getPsychologistWithImage(
+      matchedPsychologist._id,
+      req
+    );
+
+    console.log("✅ Automatic booking created successfully");
+
+    // Return success response with booking details
+    res.status(201).json({
+      success: true,
+      message: "Automatic booking created successfully!",
+      matchType: matchResult.matchType,
+      booking: {
+        id: automaticBooking._id,
+        date: automaticBooking.date,
+        time: automaticBooking.time,
+        status: automaticBooking.status
+      },
+      psychologist: {
+        id: psychologistDetails._id,
+        name: psychologistDetails.name,
+        specialization: psychologistDetails.specialization,
+        clinicName: psychologistDetails.clinicName,
+        state: psychologistDetails.state,
+        image: psychologistDetails.image,
+        rating: psychologistDetails.rating,
+        experienceYears: psychologistDetails.experienceYears,
+        hourlyRate: psychologistDetails.hourlyRate
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Create automatic booking error:", error);
+    res.status(500).json({ 
+      error: "Failed to create automatic booking", 
+      details: error.message 
+    });
   }
 };

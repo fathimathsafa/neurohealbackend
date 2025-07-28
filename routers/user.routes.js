@@ -340,10 +340,12 @@ router.get('/booking-options', controller.getBookingOptions);
 router.get('/specializations', controller.getSpecializations);
 router.get('/follow-up/:selectedOption', controller.getFollowUpQuestions);
 
-router.get('/user-status', verifyToken, (req, res) => {
-  res.json({ message: "Test route working" });
-});
+router.get('/user-status', verifyToken, controller.getUserStatus);
 router.post('/submit', verifyToken, controller.saveResponses);
+
+// New endpoints for booking availability and automatic booking
+router.get('/check-booking-availability', verifyToken, controller.checkBookingAvailability);
+router.post('/create-automatic-booking', verifyToken, controller.createAutomaticBooking);
 
 // New endpoints for returning users
 router.get('/psychologists/all', verifyToken, async (req, res) => {
