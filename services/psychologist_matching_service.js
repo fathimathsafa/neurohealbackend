@@ -242,45 +242,93 @@ class PsychologistMatchingService {
       const normalizedUserState = normalizeState(userState);
       console.log(`🔍 Normalized state: ${normalizedUserState}`);
 
-      // Step 1: Try to find in user's state with exact specialization (case-insensitive)
+      // Special logic for Kerala users - only book Kerala psychologists
+      if (normalizedUserState === 'kerala') {
+        console.log(`🔍 Kerala user detected - searching only Kerala psychologists`);
+        
+        // Step 1: Try to find in Kerala with exact specialization
+        let psychologists = await Psychologist.find({
+          state: { $regex: new RegExp(`^kerala$`, 'i') },
+          specialization: requiredSpecialization,
+          available: true
+        }).sort({ rating: -1, experienceYears: -1 });
+
+        if (psychologists.length > 0) {
+          console.log(`✅ Found ${psychologists.length} Kerala psychologists with ${requiredSpecialization}`);
+          return {
+            psychologist: psychologists[0],
+            matchType: 'kerala_exact',
+            message: `Found ${requiredSpecialization} psychologist in Kerala`,
+            shouldBook: true
+          };
+        }
+
+        // Step 2: Try to find in Kerala with any specialization
+        psychologists = await Psychologist.find({
+          state: { $regex: new RegExp(`^kerala$`, 'i') },
+          available: true
+        }).sort({ rating: -1, experienceYears: -1 });
+
+        if (psychologists.length > 0) {
+          console.log(`⚠️ Found ${psychologists.length} Kerala psychologists (different specialization)`);
+          return {
+            psychologist: psychologists[0],
+            matchType: 'kerala_state_only',
+            message: `No ${requiredSpecialization} psychologists in Kerala. Found ${psychologists[0].specialization} psychologist instead.`,
+            shouldBook: true
+          };
+        }
+
+        // No Kerala psychologists available
+        console.log(`❌ No psychologists found in Kerala`);
+        return {
+          psychologist: null,
+          matchType: 'no_kerala_match',
+          message: `No psychologists available in Kerala at the moment. Your questionnaire has been saved.`,
+          shouldBook: false
+        };
+      }
+
+      // For all other states - book any available psychologist
+      console.log(`🔍 Non-Kerala user - searching all available psychologists`);
+      
+      // Step 1: Try to find any psychologist with exact specialization (any state)
       let psychologists = await Psychologist.find({
-        state: { $regex: new RegExp(`^${normalizedUserState}$`, 'i') },
         specialization: requiredSpecialization,
         available: true
       }).sort({ rating: -1, experienceYears: -1 });
 
       if (psychologists.length > 0) {
-        console.log(`✅ Found ${psychologists.length} psychologists in ${userState} with ${requiredSpecialization}`);
+        console.log(`✅ Found ${psychologists.length} psychologists with ${requiredSpecialization} (any state)`);
         return {
           psychologist: psychologists[0],
-          matchType: 'exact',
-          message: `Found ${requiredSpecialization} psychologist in ${userState}`,
+          matchType: 'any_state_exact',
+          message: `Found ${requiredSpecialization} psychologist (${psychologists[0].state})`,
           shouldBook: true
         };
       }
 
-      // Step 2: Try to find in user's state with any specialization (case-insensitive)
+      // Step 2: Try to find any available psychologist (any state, any specialization)
       psychologists = await Psychologist.find({
-        state: { $regex: new RegExp(`^${normalizedUserState}$`, 'i') },
         available: true
       }).sort({ rating: -1, experienceYears: -1 });
 
       if (psychologists.length > 0) {
-        console.log(`⚠️ Found ${psychologists.length} psychologists in ${userState} (different specialization)`);
+        console.log(`⚠️ Found ${psychologists.length} available psychologists (any state, any specialization)`);
         return {
           psychologist: psychologists[0],
-          matchType: 'state_only',
-          message: `No ${requiredSpecialization} psychologists in ${userState}. Found ${psychologists[0].specialization} psychologist instead.`,
+          matchType: 'any_state_any_specialization',
+          message: `No ${requiredSpecialization} psychologists available. Found ${psychologists[0].specialization} psychologist in ${psychologists[0].state}.`,
           shouldBook: true
         };
       }
 
-      // No psychologists found in user's state - don't book
-      console.log(`❌ No psychologists found in ${userState}`);
+      // No psychologists available anywhere
+      console.log(`❌ No psychologists available anywhere`);
       return {
         psychologist: null,
-        matchType: 'no_match',
-        message: `No psychologists available in ${userState}. Your questionnaire has been saved.`,
+        matchType: 'no_match_anywhere',
+        message: `No psychologists available at the moment. Your questionnaire has been saved.`,
         shouldBook: false
       };
       
