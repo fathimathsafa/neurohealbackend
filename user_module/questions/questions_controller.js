@@ -352,10 +352,20 @@ exports.checkBookingAvailability = async (req, res) => {
       });
     }
 
-    // Find the best psychologist for the user
+    // Get the user's questionnaire response to find the bookingFor value
+    const questionnaireResponse = await UserResponse.findOne({ userId }).sort({ createdAt: -1 });
+    if (!questionnaireResponse) {
+      return res.status(200).json({
+        canBook: false,
+        message: "Please complete the questionnaire first.",
+        reason: "questionnaire_not_found"
+      });
+    }
+
+    // Find the best psychologist for the user using the bookingFor from questionnaire
     const matchResult = await PsychologistMatchingService.findBestPsychologistEnhanced(
       user.state,
-      user.preferredSpecialization || "General", 
+      questionnaireResponse.bookingFor, 
       userId
     );
 
@@ -436,10 +446,20 @@ exports.createAutomaticBooking = async (req, res) => {
       });
     }
 
-    // Find the best psychologist for the user
+    // Get the user's questionnaire response to find the bookingFor value
+    const questionnaireResponse = await UserResponse.findOne({ userId }).sort({ createdAt: -1 });
+    if (!questionnaireResponse) {
+      return res.status(400).json({
+        success: false,
+        message: "Please complete the questionnaire first.",
+        reason: "questionnaire_not_found"
+      });
+    }
+
+    // Find the best psychologist for the user using the bookingFor from questionnaire
     const matchResult = await PsychologistMatchingService.findBestPsychologistEnhanced(
       user.state,
-      user.preferredSpecialization || "General", 
+      questionnaireResponse.bookingFor, 
       userId
     );
 
@@ -459,8 +479,8 @@ exports.createAutomaticBooking = async (req, res) => {
       matchedPsychologist._id,
       {
         state: user.state,
-        bookingFor: user.preferredSpecialization || "General",
-        followUpAnswers: {} // We don't have the original answers here, but that's okay
+        bookingFor: questionnaireResponse.bookingFor,
+        followUpAnswers: questionnaireResponse.followUpAnswers
       }
     );
 
