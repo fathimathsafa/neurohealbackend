@@ -34,7 +34,7 @@ exports.psychologistLogin = async (req, res) => {
     const token = jwt.sign(
       { id: psychologist._id, username: psychologist.username, role: "psychologist" },
       JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: "365d" }
     );
 
     // ✅ 6. Send response

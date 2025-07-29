@@ -113,7 +113,7 @@ exports.register = async (req, res) => {
     await newUser.save();
     delete otpStore[email];
 
-    const token = jwt.sign({ id: newUser._id, email: newUser.email }, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign({ id: newUser._id, email: newUser.email }, JWT_SECRET, { expiresIn: '365d' });
 
     res.status(201).json({
       message: "Registration successful",
@@ -141,18 +141,18 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ message: "Invalid password" });
 
-    // 1️⃣ Create Access Token
+    // 1️⃣ Create Access Token (365 days for mobile app)
     const accessToken = jwt.sign(
       { id: user._id, email: user.email, role: 'user' },
       JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '365d' }
     );
 
-    // 2️⃣ Create Refresh Token
+    // 2️⃣ Create Refresh Token (365 days for mobile app)
     const refreshToken = jwt.sign(
       { id: user._id, role: 'user' },
       REFRESH_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '365d' }
     );
 
     // 3️⃣ Save refreshToken on user record and update login timestamp
@@ -199,7 +199,7 @@ exports.loginDoctor = async (req, res) => {
     const token = jwt.sign(
       { role: 'doctor', username: doctor.username, id: doctor._id },
       JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '365d' }
     );
 
     return res.status(200).json({

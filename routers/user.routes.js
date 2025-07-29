@@ -316,7 +316,7 @@ router.post('/verify-otp', async (req, res) => {
     const token = jwt.sign(
       { id: user._id, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '365d' }
     );
 
     res.json({
@@ -452,7 +452,7 @@ router.post('/refresh-token', async (req, res) => {
     const newAccessToken = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
       JWT_SECRET,
-      { expiresIn: '1h' }
+      { expiresIn: '365d' }
     );
 
     res.json({ accessToken: newAccessToken });
