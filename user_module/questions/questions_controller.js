@@ -1,5 +1,6 @@
 const UserResponse = require('../questions/questions_model');
 const PsychologistMatchingService = require('../../services/psychologist_matching_service');
+const TimeSlotService = require('../../services/time_slot_service');
 const User = require('../../model/user.model');
 // No need for booking controller import - using PsychologistMatchingService
 
@@ -506,6 +507,7 @@ exports.createAutomaticBooking = async (req, res) => {
         id: automaticBooking._id,
         date: automaticBooking.date,
         time: automaticBooking.time,
+        timeDisplay: TimeSlotService.formatTime12Hour(automaticBooking.time), // Add 12-hour format
         status: automaticBooking.status
       },
       psychologist: {

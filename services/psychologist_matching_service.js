@@ -81,101 +81,91 @@ class PsychologistMatchingService {
     try {
       console.log(`📅 Creating automatic booking for user ${userId} with psychologist ${psychologistId}`);
       
-      // Debug: Show all available slots for next few days
-      await TimeSlotService.debugAvailableSlots(psychologistId);
+      // Try to find and book a slot with retry logic
+      let attempts = 0;
+      const maxAttempts = 3;
       
-      // Get next available slot for the psychologist
-      const nextSlot = await TimeSlotService.getNextAvailableSlot(psychologistId);
-      
-      if (!nextSlot) {
-        throw new Error('No available slots found for this psychologist in the next 14 days');
-      }
-      
-      console.log(`📅 Found next available slot: ${nextSlot.date} with ${nextSlot.slots.length} slots available`);
-      console.log(`🕐 Available times: ${nextSlot.slots.map(s => s.startTime).join(', ')}`);
-      
-      // Use the first available slot
-      const selectedSlot = nextSlot.slots[0];
-      const bookingDate = new Date(nextSlot.date + 'T' + selectedSlot.startTime + ':00');
-      
-      console.log(`📅 Selected slot: ${nextSlot.date} at ${selectedSlot.startTime}`);
-      console.log(`🕐 Booking date/time: ${bookingDate.toISOString()}`);
-      console.log(`📋 Total available slots: ${nextSlot.slots.length}`);
-      
-      // 🛡️ CHECK FOR EXISTING BOOKING: Simple and reliable check
-      const existingBooking = await Booking.findOne({
-        psychologist: psychologistId,
-        date: {
-          $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
-          $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
-        },
-        time: selectedSlot.startTime,
-        status: { $in: ['pending', 'confirmed'] }
-      });
-
-      // If existingBooking is found, the slot is already taken - try next slot
-      if (existingBooking) {
-        console.log(`⚠️ Slot ${selectedSlot.startTime} is taken by user: ${existingBooking.user}, trying next slot...`);
+      while (attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔄 Attempt ${attempts}/${maxAttempts} to create automatic booking`);
         
-        // Try the next available slot
-        if (nextSlot.slots.length > 1) {
-          const nextAvailableSlot = nextSlot.slots[1];
-          const nextBookingDate = new Date(nextSlot.date + 'T' + nextAvailableSlot.startTime + ':00');
+        try {
+          // Get fresh available slots for each attempt
+          const nextSlot = await TimeSlotService.getNextAvailableSlot(psychologistId);
           
-          console.log(`📅 Trying next slot: ${nextSlot.date} at ${nextAvailableSlot.startTime}`);
-          
-          const nextExistingBooking = await Booking.findOne({
-            psychologist: psychologistId,
-            date: {
-              $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
-              $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
-            },
-            time: nextAvailableSlot.startTime,
-            status: { $in: ['pending', 'confirmed'] }
-          });
-
-          if (nextExistingBooking) {
-            throw new Error('All available slots for this date are now taken. Please try again.');
+          if (!nextSlot) {
+            throw new Error('No available slots found for this psychologist in the next 14 days');
           }
+          
+          console.log(`📅 Found ${nextSlot.slots.length} available slots for ${nextSlot.date}`);
+          console.log(`🕐 Available times (12h): ${nextSlot.slots.map(s => s.startTimeDisplay).join(', ')}`);
+          
+          // Try each available slot until one works
+          for (let i = 0; i < nextSlot.slots.length; i++) {
+            const selectedSlot = nextSlot.slots[i];
+            const bookingDate = new Date(nextSlot.date + 'T' + selectedSlot.startTime + ':00');
+            
+            console.log(`🎯 Trying slot ${i + 1}/${nextSlot.slots.length}: ${nextSlot.date} at ${selectedSlot.startTimeDisplay}`);
+            
+            // Quick check if slot is still available
+            const existingBooking = await Booking.findOne({
+              psychologist: psychologistId,
+              date: {
+                $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
+                $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
+              },
+              time: selectedSlot.startTime,
+              status: { $in: ['pending', 'confirmed'] }
+            });
 
-          // Create the booking with the next available slot
-          const newBooking = new Booking({
-            user: userId,
-            psychologist: psychologistId,
-            date: nextBookingDate,
-            time: nextAvailableSlot.startTime,
-            status: 'pending',
-            questionnaireData: questionnaireData,
-            bookingType: questionnaireData.bookingFor,
-            bookingMethod: 'automatic'
-          });
+            if (existingBooking) {
+              console.log(`⚠️ Slot ${selectedSlot.startTimeDisplay} is taken, trying next slot...`);
+              continue; // Try next slot
+            }
 
-          const savedBooking = await newBooking.save();
-          console.log(`✅ Automatic booking created with next slot: ${savedBooking._id} for ${nextSlot.date} at ${nextAvailableSlot.startTime}`);
-          return savedBooking;
-        } else {
-          throw new Error('All available slots for this date are now taken. Please try again.');
+            // Try to create the booking
+            const newBooking = new Booking({
+              user: userId,
+              psychologist: psychologistId,
+              date: bookingDate,
+              time: selectedSlot.startTime,
+              status: 'pending',
+              questionnaireData: questionnaireData,
+              bookingType: questionnaireData.bookingFor,
+              bookingMethod: 'automatic'
+            });
+
+            const savedBooking = await newBooking.save();
+            console.log(`✅ Automatic booking created successfully: ${savedBooking._id} for ${nextSlot.date} at ${selectedSlot.startTimeDisplay}`);
+            return savedBooking;
+            
+          } // End of slot loop
+          
+          // If we get here, all slots for this date were taken
+          console.log(`⚠️ All slots for ${nextSlot.date} were taken, will retry...`);
+          
+        } catch (error) {
+          // Handle specific booking errors
+          if (error.name === 'DuplicateBookingError' || error.code === 11000) {
+            console.log(`⚠️ Duplicate booking error on attempt ${attempts}, retrying...`);
+            continue; // Try again
+          }
+          
+          // For other errors, throw immediately
+          throw error;
+        }
+        
+        // Small delay before retry to avoid overwhelming the database
+        if (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
         }
       }
-
-      // Create the booking since slot is available
-      const newBooking = new Booking({
-        user: userId,
-        psychologist: psychologistId,
-        date: bookingDate,
-        time: selectedSlot.startTime,
-        status: 'pending',
-        questionnaireData: questionnaireData,
-        bookingType: questionnaireData.bookingFor,
-        bookingMethod: 'automatic'
-      });
-
-      const savedBooking = await newBooking.save();
-      console.log(`✅ Automatic booking created: ${savedBooking._id} for ${nextSlot.date} at ${selectedSlot.startTime}`);
       
-      return savedBooking;
+      // If we get here, all attempts failed
+      throw new Error('Unable to find an available slot after multiple attempts. Please try again later.');
       
     } catch (error) {
+      console.error('❌ Error creating automatic booking:', error);
       console.error('❌ Error creating automatic booking:', error);
       
       // Handle duplicate booking error from pre-save hook

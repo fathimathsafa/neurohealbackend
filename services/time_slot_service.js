@@ -3,6 +3,44 @@ const Booking = require('../user_module/psychologist_booking/psychologist_bookin
 class TimeSlotService {
   
   /**
+   * Convert 24-hour time to 12-hour format with AM/PM
+   */
+  static formatTime12Hour(time24) {
+    try {
+      const [hours, minutes] = time24.split(':');
+      const hour = parseInt(hours);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minutes} ${ampm}`;
+    } catch (error) {
+      console.error('❌ Error formatting time:', error);
+      return time24; // Return original if formatting fails
+    }
+  }
+
+  /**
+   * Convert 12-hour time back to 24-hour format for database storage
+   */
+  static formatTime24Hour(time12) {
+    try {
+      const [time, ampm] = time12.split(' ');
+      const [hours, minutes] = time.split(':');
+      let hour = parseInt(hours);
+      
+      if (ampm === 'PM' && hour !== 12) {
+        hour += 12;
+      } else if (ampm === 'AM' && hour === 12) {
+        hour = 0;
+      }
+      
+      return `${hour.toString().padStart(2, '0')}:${minutes}`;
+    } catch (error) {
+      console.error('❌ Error converting time:', error);
+      return time12; // Return original if conversion fails
+    }
+  }
+
+  /**
    * Generate available time slots for a psychologist on a specific date
    */
   static generateTimeSlots(psychologist, date) {
@@ -37,9 +75,14 @@ class TimeSlotService {
         const slotEnd = new Date(currentSlot.getTime() + sessionDuration * 60000);
         
         if (slotEnd <= endTime) {
+          const startTime24 = currentSlot.toTimeString().slice(0, 5); // HH:MM format
+          const endTime24 = slotEnd.toTimeString().slice(0, 5);
+          
           slots.push({
-            startTime: currentSlot.toTimeString().slice(0, 5), // HH:MM format
-            endTime: slotEnd.toTimeString().slice(0, 5),
+            startTime: startTime24, // Keep 24-hour format for database operations
+            endTime: endTime24,
+            startTimeDisplay: this.formatTime12Hour(startTime24), // 12-hour format for display
+            endTimeDisplay: this.formatTime12Hour(endTime24),
             date: targetDate.toISOString().split('T')[0],
             dayName: dayName
           });
@@ -185,14 +228,16 @@ class TimeSlotService {
         
         if (availableSlots.length > 0) {
           console.log(`📅 ${dateString} (${i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : `Day ${i+1}`}): ${availableSlots.length} slots available`);
-          console.log(`   Times: ${availableSlots.map(s => s.startTime).join(', ')}`);
+          console.log(`   Times (24h): ${availableSlots.map(s => s.startTime).join(', ')}`);
+          console.log(`   Times (12h): ${availableSlots.map(s => s.startTimeDisplay).join(', ')}`);
           
           if (dateString === today) {
             const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
             const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
             const futureSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
             console.log(`   After ${bufferTimeString} buffer: ${futureSlots.length} slots`);
-            console.log(`   Future times: ${futureSlots.map(s => s.startTime).join(', ')}`);
+            console.log(`   Future times (24h): ${futureSlots.map(s => s.startTime).join(', ')}`);
+            console.log(`   Future times (12h): ${futureSlots.map(s => s.startTimeDisplay).join(', ')}`);
           }
         } else {
           console.log(`📅 ${dateString} (${i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : `Day ${i+1}`}): No slots available`);
