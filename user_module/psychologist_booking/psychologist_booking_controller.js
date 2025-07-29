@@ -16,39 +16,22 @@ exports.createBooking = async (req, res) => {
       });
     }
 
-    // 🛡️ ATOMIC BOOKING: Check availability and create booking in one operation
+    // 🛡️ CHECK FOR EXISTING BOOKING: Simple and reliable check
     const bookingDate = new Date(date + 'T' + time + ':00');
     
-    // Use findOneAndUpdate with upsert to atomically check and create
-    const existingBooking = await Booking.findOneAndUpdate(
-      {
-        psychologist: psychologistId,
-        date: {
-          $gte: new Date(date + 'T00:00:00.000Z'),
-          $lt: new Date(date + 'T23:59:59.999Z')
-        },
-        time: time,
-        status: { $in: ['pending', 'confirmed'] }
+    const existingBooking = await Booking.findOne({
+      psychologist: psychologistId,
+      date: {
+        $gte: new Date(date + 'T00:00:00.000Z'),
+        $lt: new Date(date + 'T23:59:59.999Z')
       },
-      {
-        $setOnInsert: {
-          user: userId,
-          psychologist: psychologistId,
-          date: bookingDate,
-          time: time,
-          status: 'pending',
-          bookingMethod: 'manual'
-        }
-      },
-      {
-        upsert: false, // Don't create if exists
-        new: true,
-        runValidators: true
-      }
-    );
+      time: time,
+      status: { $in: ['pending', 'confirmed'] }
+    });
 
     // If existingBooking is found, the slot is already taken
     if (existingBooking) {
+      console.log(`❌ Slot already booked by user: ${existingBooking.user}`);
       return res.status(409).json({
         status: false,
         message: "This time slot is no longer available. Please select another time."
@@ -1293,45 +1276,22 @@ exports.createBookingWithDetails = async (req, res) => {
       });
     }
 
-    // 🛡️ ATOMIC BOOKING: Check availability and create booking in one operation
+    // 🛡️ CHECK FOR EXISTING BOOKING: Simple and reliable check
     const bookingDate = new Date(date + 'T' + time + ':00');
     
-    // Use findOneAndUpdate with upsert to atomically check and create
-    const existingBooking = await Booking.findOneAndUpdate(
-      {
-        psychologist: psychologistId,
-        date: {
-          $gte: new Date(date + 'T00:00:00.000Z'),
-          $lt: new Date(date + 'T23:59:59.999Z')
-        },
-        time: time,
-        status: { $in: ['pending', 'confirmed'] }
+    const existingBooking = await Booking.findOne({
+      psychologist: psychologistId,
+      date: {
+        $gte: new Date(date + 'T00:00:00.000Z'),
+        $lt: new Date(date + 'T23:59:59.999Z')
       },
-      {
-        $setOnInsert: {
-          user: userId,
-          psychologist: psychologistId,
-          date: bookingDate,
-          time: time,
-          status: 'pending',
-          patientDetails: {
-            patientName: patientName.trim(),
-            contactNumber: contactNumber.trim(),
-            relationWithPatient: relationWithPatient,
-            age: parseInt(age)
-          },
-          bookingMethod: 'manual'
-        }
-      },
-      {
-        upsert: false, // Don't create if exists
-        new: true,
-        runValidators: true
-      }
-    );
+      time: time,
+      status: { $in: ['pending', 'confirmed'] }
+    });
 
     // If existingBooking is found, the slot is already taken
     if (existingBooking) {
+      console.log(`❌ Slot already booked by user: ${existingBooking.user}`);
       return res.status(409).json({
         status: false,
         message: "This time slot is no longer available. Please select another time."

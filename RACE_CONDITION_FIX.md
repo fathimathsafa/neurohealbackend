@@ -14,39 +14,26 @@
 
 ## ✅ Solution Implemented
 
-### 1. **Atomic Booking Operations**
+### 1. **Simple and Reliable Booking Validation**
 
-All booking functions now use **atomic database operations** to prevent race conditions:
+All booking functions now use **simple and reliable checks** to prevent double bookings:
 
 #### Manual Booking (`createBooking`)
 ```javascript
-// 🛡️ ATOMIC BOOKING: Check availability and create booking in one operation
-const existingBooking = await Booking.findOneAndUpdate(
-  {
-    psychologist: psychologistId,
-    date: { $gte: startDate, $lt: endDate },
-    time: time,
-    status: { $in: ['pending', 'confirmed'] }
+// 🛡️ CHECK FOR EXISTING BOOKING: Simple and reliable check
+const existingBooking = await Booking.findOne({
+  psychologist: psychologistId,
+  date: {
+    $gte: new Date(date + 'T00:00:00.000Z'),
+    $lt: new Date(date + 'T23:59:59.999Z')
   },
-  {
-    $setOnInsert: {
-      user: userId,
-      psychologist: psychologistId,
-      date: bookingDate,
-      time: time,
-      status: 'pending',
-      bookingMethod: 'manual'
-    }
-  },
-  {
-    upsert: false, // Don't create if exists
-    new: true,
-    runValidators: true
-  }
-);
+  time: time,
+  status: { $in: ['pending', 'confirmed'] }
+});
 
 // If existingBooking is found, the slot is already taken
 if (existingBooking) {
+  console.log(`❌ Slot already booked by user: ${existingBooking.user}`);
   return res.status(409).json({
     status: false,
     message: "This time slot is no longer available. Please select another time."
@@ -55,12 +42,12 @@ if (existingBooking) {
 ```
 
 #### Automatic Booking (`createAutomaticBooking`)
-- Same atomic logic as manual booking
+- Same simple check logic as manual booking
 - **Fallback mechanism**: If first slot is taken, automatically tries the next available slot
 - **Error handling**: If all slots are taken, returns appropriate error message
 
 #### Booking with Patient Details (`createBookingWithDetails`)
-- Same atomic logic with additional patient details validation
+- Same simple check logic with additional patient details validation
 
 ### 2. **Database-Level Protection**
 
@@ -111,12 +98,12 @@ bookingSchema.index({ psychologist: 1, date: -1 });
 
 ### Step-by-Step Process:
 1. **User A** tries to book "10:00 AM"
-2. **Atomic Check**: Database checks if slot exists with `pending/confirmed` status
+2. **Check**: Database checks if slot exists with `pending/confirmed` status
 3. **Result**: No existing booking found
 4. **User A** booking created successfully ✅
 
 5. **User B** tries to book "10:00 AM" (simultaneously)
-6. **Atomic Check**: Database checks if slot exists with `pending/confirmed` status
+6. **Check**: Database checks if slot exists with `pending/confirmed` status
 7. **Result**: User A's booking now exists
 8. **User B** gets error: "Slot no longer available" ✅
 
@@ -156,7 +143,7 @@ curl -X POST /api/book \
 ### ✅ **Prevents Double Bookings**
 - No more race conditions
 - Database-level enforcement
-- Atomic operations
+- Simple and reliable checks
 
 ### ✅ **Better User Experience**
 - Clear error messages
@@ -177,11 +164,11 @@ curl -X POST /api/book \
 
 ### Files Modified:
 1. `user_module/psychologist_booking/psychologist_booking_controller.js`
-   - `createBooking()` - Atomic manual booking
-   - `createBookingWithDetails()` - Atomic booking with patient details
+   - `createBooking()` - Simple booking validation
+   - `createBookingWithDetails()` - Simple booking with patient details validation
 
 2. `services/psychologist_matching_service.js`
-   - `createAutomaticBooking()` - Atomic automatic booking with fallback
+   - `createAutomaticBooking()` - Simple automatic booking with fallback
 
 3. `user_module/psychologist_booking/psychologist_booking_model.js`
    - Added unique compound index

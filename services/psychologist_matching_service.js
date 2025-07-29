@@ -96,39 +96,20 @@ class PsychologistMatchingService {
       console.log(`🕐 Booking date/time: ${bookingDate.toISOString()}`);
       console.log(`📋 Total available slots: ${nextSlot.slots.length}`);
       
-      // 🛡️ ATOMIC BOOKING: Check availability and create booking in one operation
-      const existingBooking = await Booking.findOneAndUpdate(
-        {
-          psychologist: psychologistId,
-          date: {
-            $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
-            $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
-          },
-          time: selectedSlot.startTime,
-          status: { $in: ['pending', 'confirmed'] }
+      // 🛡️ CHECK FOR EXISTING BOOKING: Simple and reliable check
+      const existingBooking = await Booking.findOne({
+        psychologist: psychologistId,
+        date: {
+          $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
+          $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
         },
-        {
-          $setOnInsert: {
-            user: userId,
-            psychologist: psychologistId,
-            date: bookingDate,
-            time: selectedSlot.startTime,
-            status: 'pending',
-            questionnaireData: questionnaireData,
-            bookingType: questionnaireData.bookingFor,
-            bookingMethod: 'automatic'
-          }
-        },
-        {
-          upsert: false, // Don't create if exists
-          new: true,
-          runValidators: true
-        }
-      );
+        time: selectedSlot.startTime,
+        status: { $in: ['pending', 'confirmed'] }
+      });
 
       // If existingBooking is found, the slot is already taken - try next slot
       if (existingBooking) {
-        console.log(`⚠️ Slot ${selectedSlot.startTime} is taken, trying next slot...`);
+        console.log(`⚠️ Slot ${selectedSlot.startTime} is taken by user: ${existingBooking.user}, trying next slot...`);
         
         // Try the next available slot
         if (nextSlot.slots.length > 1) {
@@ -137,34 +118,15 @@ class PsychologistMatchingService {
           
           console.log(`📅 Trying next slot: ${nextSlot.date} at ${nextAvailableSlot.startTime}`);
           
-          const nextExistingBooking = await Booking.findOneAndUpdate(
-            {
-              psychologist: psychologistId,
-              date: {
-                $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
-                $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
-              },
-              time: nextAvailableSlot.startTime,
-              status: { $in: ['pending', 'confirmed'] }
+          const nextExistingBooking = await Booking.findOne({
+            psychologist: psychologistId,
+            date: {
+              $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
+              $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
             },
-            {
-              $setOnInsert: {
-                user: userId,
-                psychologist: psychologistId,
-                date: nextBookingDate,
-                time: nextAvailableSlot.startTime,
-                status: 'pending',
-                questionnaireData: questionnaireData,
-                bookingType: questionnaireData.bookingFor,
-                bookingMethod: 'automatic'
-              }
-            },
-            {
-              upsert: false,
-              new: true,
-              runValidators: true
-            }
-          );
+            time: nextAvailableSlot.startTime,
+            status: { $in: ['pending', 'confirmed'] }
+          });
 
           if (nextExistingBooking) {
             throw new Error('All available slots for this date are now taken. Please try again.');
