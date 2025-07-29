@@ -93,7 +93,46 @@ const bookingSchema = new mongoose.Schema({
   cancellationReason: String
 }, { timestamps: true });
 
-// 🛡️ UNIQUE COMPOUND INDEX: Prevent duplicate bookings for same psychologist, date, time, and active status
+// 🛡️ PRE-SAVE HOOK: Prevent duplicate bookings at model level
+bookingSchema.pre('save', async function(next) {
+  try {
+    // Check if a booking already exists for this psychologist, date, and time
+    const existingBooking = await this.constructor.findOne({
+      psychologist: this.psychologist,
+      date: {
+        $gte: new Date(this.date.toISOString().split('T')[0] + 'T00:00:00.000Z'),
+        $lt: new Date(this.date.toISOString().split('T')[0] + 'T23:59:59.999Z')
+      },
+      time: this.time,
+      _id: { $ne: this._id } // Exclude current document if updating
+    });
+
+    if (existingBooking) {
+      const error = new Error(`Booking already exists for this psychologist on ${this.date.toISOString().split('T')[0]} at ${this.time}`);
+      error.name = 'DuplicateBookingError';
+      return next(error);
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 🛡️ UNIQUE COMPOUND INDEX: Prevent ANY duplicate bookings for same psychologist, date, and time
+bookingSchema.index(
+  { 
+    psychologist: 1, 
+    date: 1, 
+    time: 1
+  }, 
+  { 
+    unique: true,
+    name: 'unique_booking_slot'
+  }
+);
+
+// 🛡️ ADDITIONAL INDEX: For efficient querying of active bookings
 bookingSchema.index(
   { 
     psychologist: 1, 
@@ -102,11 +141,10 @@ bookingSchema.index(
     status: 1 
   }, 
   { 
-    unique: true,
     partialFilterExpression: { 
       status: { $in: ['pending', 'confirmed'] } 
     },
-    name: 'unique_active_booking'
+    name: 'active_booking_index'
   }
 );
 

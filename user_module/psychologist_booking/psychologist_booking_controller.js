@@ -65,6 +65,23 @@ exports.createBooking = async (req, res) => {
 
   } catch (err) {
     console.error("Booking error:", err);
+    
+    // Handle duplicate booking error from pre-save hook
+    if (err.name === 'DuplicateBookingError') {
+      return res.status(409).json({
+        status: false,
+        message: "This time slot is no longer available. Please select another time."
+      });
+    }
+    
+    // Handle MongoDB duplicate key error
+    if (err.code === 11000) {
+      return res.status(409).json({
+        status: false,
+        message: "This time slot is no longer available. Please select another time."
+      });
+    }
+    
     res.status(500).json({ status: false, message: err.message });
   }
 };
@@ -1351,10 +1368,26 @@ exports.createBookingWithDetails = async (req, res) => {
 
   } catch (err) {
     console.error("❌ Booking error:", err);
+    
+    // Handle duplicate booking error from pre-save hook
+    if (err.name === 'DuplicateBookingError') {
+      return res.status(409).json({
+        status: false,
+        message: "This time slot is no longer available. Please select another time."
+      });
+    }
+    
+    // Handle MongoDB duplicate key error
+    if (err.code === 11000) {
+      return res.status(409).json({
+        status: false,
+        message: "This time slot is no longer available. Please select another time."
+      });
+    }
+    
     res.status(500).json({ 
       status: false, 
-      message: "Error creating booking",
-      error: err.message 
+      message: err.message 
     });
   }
 };

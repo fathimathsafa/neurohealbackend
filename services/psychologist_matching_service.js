@@ -171,6 +171,17 @@ class PsychologistMatchingService {
       
     } catch (error) {
       console.error('❌ Error creating automatic booking:', error);
+      
+      // Handle duplicate booking error from pre-save hook
+      if (error.name === 'DuplicateBookingError') {
+        throw new Error('This time slot is no longer available. Please try again.');
+      }
+      
+      // Handle MongoDB duplicate key error
+      if (error.code === 11000) {
+        throw new Error('This time slot is no longer available. Please try again.');
+      }
+      
       throw error;
     }
   }
