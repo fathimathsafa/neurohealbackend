@@ -81,12 +81,18 @@ class PsychologistMatchingService {
     try {
       console.log(`📅 Creating automatic booking for user ${userId} with psychologist ${psychologistId}`);
       
+      // Debug: Show all available slots for next few days
+      await TimeSlotService.debugAvailableSlots(psychologistId);
+      
       // Get next available slot for the psychologist
       const nextSlot = await TimeSlotService.getNextAvailableSlot(psychologistId);
       
       if (!nextSlot) {
         throw new Error('No available slots found for this psychologist in the next 14 days');
       }
+      
+      console.log(`📅 Found next available slot: ${nextSlot.date} with ${nextSlot.slots.length} slots available`);
+      console.log(`🕐 Available times: ${nextSlot.slots.map(s => s.startTime).join(', ')}`);
       
       // Use the first available slot
       const selectedSlot = nextSlot.slots[0];
@@ -145,7 +151,7 @@ class PsychologistMatchingService {
           });
 
           const savedBooking = await newBooking.save();
-          console.log(`✅ Automatic booking created with next slot: ${savedBooking._id}`);
+          console.log(`✅ Automatic booking created with next slot: ${savedBooking._id} for ${nextSlot.date} at ${nextAvailableSlot.startTime}`);
           return savedBooking;
         } else {
           throw new Error('All available slots for this date are now taken. Please try again.');
@@ -165,7 +171,7 @@ class PsychologistMatchingService {
       });
 
       const savedBooking = await newBooking.save();
-      console.log(`✅ Automatic booking created: ${savedBooking._id}`);
+      console.log(`✅ Automatic booking created: ${savedBooking._id} for ${nextSlot.date} at ${selectedSlot.startTime}`);
       
       return savedBooking;
       

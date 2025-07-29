@@ -148,6 +148,47 @@ class TimeSlotService {
   }
   
   /**
+   * Debug function to show all available slots for next few days
+   */
+  static async debugAvailableSlots(psychologistId) {
+    try {
+      console.log(`🔍 Debug: Checking available slots for psychologist ${psychologistId}`);
+      
+      const now = new Date();
+      const currentTime = now.toTimeString().slice(0, 5);
+      const today = now.toISOString().split('T')[0];
+      
+      console.log(`🕐 Current time: ${currentTime}, Today: ${today}`);
+      
+      for (let i = 0; i < 7; i++) {
+        const date = new Date();
+        date.setDate(date.getDate() + i);
+        const dateString = date.toISOString().split('T')[0];
+        
+        const availableSlots = await this.getAvailableSlots(psychologistId, dateString);
+        
+        if (availableSlots.length > 0) {
+          console.log(`📅 ${dateString} (${i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : `Day ${i+1}`}): ${availableSlots.length} slots available`);
+          console.log(`   Times: ${availableSlots.map(s => s.startTime).join(', ')}`);
+          
+          if (dateString === today) {
+            const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+            const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
+            const futureSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
+            console.log(`   After ${bufferTimeString} buffer: ${futureSlots.length} slots`);
+            console.log(`   Future times: ${futureSlots.map(s => s.startTime).join(', ')}`);
+          }
+        } else {
+          console.log(`📅 ${dateString} (${i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : `Day ${i+1}`}): No slots available`);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in debug function:', error);
+    }
+  }
+
+  /**
    * Get next available slot for a psychologist
    */
   static async getNextAvailableSlot(psychologistId) {
@@ -166,11 +207,15 @@ class TimeSlotService {
         const availableSlots = await this.getAvailableSlots(psychologistId, dateString);
         
         if (availableSlots.length > 0) {
-          // If it's today, filter out past time slots
+          // If it's today, filter out past time slots and add buffer time
           if (dateString === today) {
-            const futureSlots = availableSlots.filter(slot => slot.startTime > currentTime);
+            // Add 2 hours buffer to current time to avoid booking too soon
+            const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000)); // 2 hours from now
+            const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
+            
+            const futureSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
             if (futureSlots.length > 0) {
-              console.log(`✅ Found ${futureSlots.length} future slots today at: ${futureSlots[0].startTime}`);
+              console.log(`✅ Found ${futureSlots.length} future slots today (after ${bufferTimeString}) at: ${futureSlots[0].startTime}`);
               return {
                 date: dateString,
                 slots: futureSlots
