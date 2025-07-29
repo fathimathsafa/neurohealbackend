@@ -90,9 +90,25 @@ class TimeSlotService {
       
       // Filter out booked slots
       const bookedTimes = bookedSlots.map(booking => booking.time);
-      const availableSlots = allSlots.filter(slot => 
+      let availableSlots = allSlots.filter(slot => 
         !bookedTimes.includes(slot.startTime)
       );
+      
+      // If it's today, filter out past time slots and add buffer time
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      
+      if (date === today) {
+        const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+        // Add 2 hours buffer to current time to avoid booking too soon
+        const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000)); // 2 hours from now
+        const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
+        
+        console.log(`🕐 Current time: ${currentTime}, Buffer time: ${bufferTimeString}`);
+        
+        availableSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
+        console.log(`📅 After filtering past slots: ${availableSlots.length} slots available`);
+      }
       
       console.log(`✅ Found ${availableSlots.length} available slots`);
       return availableSlots;
@@ -194,10 +210,9 @@ class TimeSlotService {
   static async getNextAvailableSlot(psychologistId) {
     try {
       const now = new Date();
-      const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
       const today = now.toISOString().split('T')[0];
       
-      console.log(`🕐 Current time: ${currentTime}, Today: ${today}`);
+      console.log(`🕐 Current time: ${now.toTimeString().slice(0, 5)}, Today: ${today}`);
       
       for (let i = 0; i < 14; i++) { // Check next 14 days
         const date = new Date();
@@ -207,28 +222,11 @@ class TimeSlotService {
         const availableSlots = await this.getAvailableSlots(psychologistId, dateString);
         
         if (availableSlots.length > 0) {
-          // If it's today, filter out past time slots and add buffer time
-          if (dateString === today) {
-            // Add 2 hours buffer to current time to avoid booking too soon
-            const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000)); // 2 hours from now
-            const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
-            
-            const futureSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
-            if (futureSlots.length > 0) {
-              console.log(`✅ Found ${futureSlots.length} future slots today (after ${bufferTimeString}) at: ${futureSlots[0].startTime}`);
-              return {
-                date: dateString,
-                slots: futureSlots
-              };
-            }
-          } else {
-            // For future dates, return all available slots
-            console.log(`✅ Found ${availableSlots.length} slots for ${dateString} at: ${availableSlots[0].startTime}`);
-            return {
-              date: dateString,
-              slots: availableSlots
-            };
-          }
+          console.log(`✅ Found ${availableSlots.length} slots for ${dateString} at: ${availableSlots[0].startTime}`);
+          return {
+            date: dateString,
+            slots: availableSlots
+          };
         }
       }
       
