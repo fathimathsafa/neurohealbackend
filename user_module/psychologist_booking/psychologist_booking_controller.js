@@ -16,20 +16,60 @@ exports.createBooking = async (req, res) => {
       });
     }
 
-    // Check if this is user's first booking
-    const existingBookings = await Booking.find({ user: userId });
-    const isFirstBooking = existingBookings.length === 0;
+    // 🛡️ ATOMIC BOOKING: Check availability and create booking in one operation
+    const bookingDate = new Date(date + 'T' + time + ':00');
+    
+    // Use findOneAndUpdate with upsert to atomically check and create
+    const existingBooking = await Booking.findOneAndUpdate(
+      {
+        psychologist: psychologistId,
+        date: {
+          $gte: new Date(date + 'T00:00:00.000Z'),
+          $lt: new Date(date + 'T23:59:59.999Z')
+        },
+        time: time,
+        status: { $in: ['pending', 'confirmed'] }
+      },
+      {
+        $setOnInsert: {
+          user: userId,
+          psychologist: psychologistId,
+          date: bookingDate,
+          time: time,
+          status: 'pending',
+          bookingMethod: 'manual'
+        }
+      },
+      {
+        upsert: false, // Don't create if exists
+        new: true,
+        runValidators: true
+      }
+    );
 
-    // Create booking
+    // If existingBooking is found, the slot is already taken
+    if (existingBooking) {
+      return res.status(409).json({
+        status: false,
+        message: "This time slot is no longer available. Please select another time."
+      });
+    }
+
+    // Create the booking since slot is available
     const newBooking = new Booking({
       user: userId,
       psychologist: psychologistId,
-      date,
-      time,
-      bookingMethod: 'manual' // Mark as manual booking
+      date: bookingDate,
+      time: time,
+      status: 'pending',
+      bookingMethod: 'manual'
     });
 
     const savedBooking = await newBooking.save();
+
+    // Check if this is user's first booking
+    const existingBookings = await Booking.find({ user: userId });
+    const isFirstBooking = existingBookings.length === 1; // Just created this one
 
     // Return response with first booking indicator
     res.status(201).json({
@@ -37,14 +77,13 @@ exports.createBooking = async (req, res) => {
       message: isFirstBooking ? 'First booking created successfully' : 'Booking created successfully',
       booking: savedBooking,
       isFirstBooking: isFirstBooking,
-      totalBookings: existingBookings.length + 1
+      totalBookings: existingBookings.length
     });
 
   } catch (err) {
     console.error("Booking error:", err);
     res.status(500).json({ status: false, message: err.message });
   }
-  
 };
 
 // Get user's booking details with automatic status calculation
@@ -1254,35 +1293,72 @@ exports.createBookingWithDetails = async (req, res) => {
       });
     }
 
-    // Check if slot is still available
-    const isAvailable = await TimeSlotService.isSlotAvailable(psychologistId, date, time);
-    if (!isAvailable) {
-      return res.status(400).json({
+    // 🛡️ ATOMIC BOOKING: Check availability and create booking in one operation
+    const bookingDate = new Date(date + 'T' + time + ':00');
+    
+    // Use findOneAndUpdate with upsert to atomically check and create
+    const existingBooking = await Booking.findOneAndUpdate(
+      {
+        psychologist: psychologistId,
+        date: {
+          $gte: new Date(date + 'T00:00:00.000Z'),
+          $lt: new Date(date + 'T23:59:59.999Z')
+        },
+        time: time,
+        status: { $in: ['pending', 'confirmed'] }
+      },
+      {
+        $setOnInsert: {
+          user: userId,
+          psychologist: psychologistId,
+          date: bookingDate,
+          time: time,
+          status: 'pending',
+          patientDetails: {
+            patientName: patientName.trim(),
+            contactNumber: contactNumber.trim(),
+            relationWithPatient: relationWithPatient,
+            age: parseInt(age)
+          },
+          bookingMethod: 'manual'
+        }
+      },
+      {
+        upsert: false, // Don't create if exists
+        new: true,
+        runValidators: true
+      }
+    );
+
+    // If existingBooking is found, the slot is already taken
+    if (existingBooking) {
+      return res.status(409).json({
         status: false,
-        message: "Selected time slot is no longer available"
+        message: "This time slot is no longer available. Please select another time."
       });
     }
 
-    // Check if this is user's first booking
-    const existingBookings = await Booking.find({ user: userId });
-    const isFirstBooking = existingBookings.length === 0;
-
-    // Create booking with patient details
+    // Create the booking since slot is available
     const newBooking = new Booking({
       user: userId,
       psychologist: psychologistId,
-      date: new Date(date),
+      date: bookingDate,
       time: time,
+      status: 'pending',
       patientDetails: {
         patientName: patientName.trim(),
         contactNumber: contactNumber.trim(),
         relationWithPatient: relationWithPatient,
         age: parseInt(age)
       },
-      bookingMethod: 'manual' // Mark as manual booking
+      bookingMethod: 'manual'
     });
 
     const savedBooking = await newBooking.save();
+
+    // Check if this is user's first booking
+    const existingBookings = await Booking.find({ user: userId });
+    const isFirstBooking = existingBookings.length === 1; // Just created this one
 
     // Get psychologist details for response
     const psychologist = await Psychologist.findById(psychologistId)
@@ -1310,7 +1386,7 @@ exports.createBookingWithDetails = async (req, res) => {
       },
       psychologist: psychologistWithImage,
       isFirstBooking: isFirstBooking,
-      totalBookings: existingBookings.length + 1
+      totalBookings: existingBookings.length
     });
 
   } catch (err) {

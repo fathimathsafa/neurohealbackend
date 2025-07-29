@@ -93,5 +93,28 @@ const bookingSchema = new mongoose.Schema({
   cancellationReason: String
 }, { timestamps: true });
 
+// 🛡️ UNIQUE COMPOUND INDEX: Prevent duplicate bookings for same psychologist, date, time, and active status
+bookingSchema.index(
+  { 
+    psychologist: 1, 
+    date: 1, 
+    time: 1, 
+    status: 1 
+  }, 
+  { 
+    unique: true,
+    partialFilterExpression: { 
+      status: { $in: ['pending', 'confirmed'] } 
+    },
+    name: 'unique_active_booking'
+  }
+);
+
+// 🛡️ ADDITIONAL INDEX: For efficient querying of user bookings
+bookingSchema.index({ user: 1, date: -1 });
+
+// 🛡️ ADDITIONAL INDEX: For efficient querying of psychologist bookings
+bookingSchema.index({ psychologist: 1, date: -1 });
+
 const BookingModel = mongoose.model('Booking', bookingSchema);
 module.exports = BookingModel;

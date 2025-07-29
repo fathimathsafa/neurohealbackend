@@ -96,6 +96,101 @@ class PsychologistMatchingService {
       console.log(`🕐 Booking date/time: ${bookingDate.toISOString()}`);
       console.log(`📋 Total available slots: ${nextSlot.slots.length}`);
       
+      // 🛡️ ATOMIC BOOKING: Check availability and create booking in one operation
+      const existingBooking = await Booking.findOneAndUpdate(
+        {
+          psychologist: psychologistId,
+          date: {
+            $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
+            $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
+          },
+          time: selectedSlot.startTime,
+          status: { $in: ['pending', 'confirmed'] }
+        },
+        {
+          $setOnInsert: {
+            user: userId,
+            psychologist: psychologistId,
+            date: bookingDate,
+            time: selectedSlot.startTime,
+            status: 'pending',
+            questionnaireData: questionnaireData,
+            bookingType: questionnaireData.bookingFor,
+            bookingMethod: 'automatic'
+          }
+        },
+        {
+          upsert: false, // Don't create if exists
+          new: true,
+          runValidators: true
+        }
+      );
+
+      // If existingBooking is found, the slot is already taken - try next slot
+      if (existingBooking) {
+        console.log(`⚠️ Slot ${selectedSlot.startTime} is taken, trying next slot...`);
+        
+        // Try the next available slot
+        if (nextSlot.slots.length > 1) {
+          const nextAvailableSlot = nextSlot.slots[1];
+          const nextBookingDate = new Date(nextSlot.date + 'T' + nextAvailableSlot.startTime + ':00');
+          
+          console.log(`📅 Trying next slot: ${nextSlot.date} at ${nextAvailableSlot.startTime}`);
+          
+          const nextExistingBooking = await Booking.findOneAndUpdate(
+            {
+              psychologist: psychologistId,
+              date: {
+                $gte: new Date(nextSlot.date + 'T00:00:00.000Z'),
+                $lt: new Date(nextSlot.date + 'T23:59:59.999Z')
+              },
+              time: nextAvailableSlot.startTime,
+              status: { $in: ['pending', 'confirmed'] }
+            },
+            {
+              $setOnInsert: {
+                user: userId,
+                psychologist: psychologistId,
+                date: nextBookingDate,
+                time: nextAvailableSlot.startTime,
+                status: 'pending',
+                questionnaireData: questionnaireData,
+                bookingType: questionnaireData.bookingFor,
+                bookingMethod: 'automatic'
+              }
+            },
+            {
+              upsert: false,
+              new: true,
+              runValidators: true
+            }
+          );
+
+          if (nextExistingBooking) {
+            throw new Error('All available slots for this date are now taken. Please try again.');
+          }
+
+          // Create the booking with the next available slot
+          const newBooking = new Booking({
+            user: userId,
+            psychologist: psychologistId,
+            date: nextBookingDate,
+            time: nextAvailableSlot.startTime,
+            status: 'pending',
+            questionnaireData: questionnaireData,
+            bookingType: questionnaireData.bookingFor,
+            bookingMethod: 'automatic'
+          });
+
+          const savedBooking = await newBooking.save();
+          console.log(`✅ Automatic booking created with next slot: ${savedBooking._id}`);
+          return savedBooking;
+        } else {
+          throw new Error('All available slots for this date are now taken. Please try again.');
+        }
+      }
+
+      // Create the booking since slot is available
       const newBooking = new Booking({
         user: userId,
         psychologist: psychologistId,
@@ -104,7 +199,7 @@ class PsychologistMatchingService {
         status: 'pending',
         questionnaireData: questionnaireData,
         bookingType: questionnaireData.bookingFor,
-        bookingMethod: 'automatic' // Mark as automatic booking
+        bookingMethod: 'automatic'
       });
 
       const savedBooking = await newBooking.save();
