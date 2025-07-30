@@ -77,18 +77,7 @@ const followUpQuestions = {
       ],
       allowMultiple: true
     },
-    // {
-    //   question: "What is the main reason you are seeking support?",
-    //   options: ["Stress", "Anxiety", "Sleep issues", "Depression", "Relationship issues", "Other"]
-    // },
-    // {
-    //   question: "What is your relationship status?",
-    //   options: ["Married", "Unmarried", "Living together", "Divorced", "Widowed", "Prefer not to say"]
-    // },
-    // {
-    //   question: "What kind of therapy are you open to?",
-    //   options: ["Talk Therapy", "CBT", "Mindfulness Based", "EMDR", "Not sure", "Open to recommendations"]
-    // }
+    
   ],
   "My child": [
     {
