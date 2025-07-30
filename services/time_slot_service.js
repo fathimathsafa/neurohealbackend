@@ -148,9 +148,22 @@ class TimeSlotService {
         const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
         
         console.log(`🕐 Current time: ${currentTime}, Buffer time: ${bufferTimeString}`);
+        console.log(`📅 Before filtering: ${availableSlots.length} slots`);
+        console.log(`🕐 All slot times: ${availableSlots.map(s => s.startTime).join(', ')}`);
         
-        availableSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
+        // Filter out slots that are in the past (including buffer time)
+        availableSlots = availableSlots.filter(slot => {
+          const isFuture = slot.startTime > bufferTimeString;
+          if (!isFuture) {
+            console.log(`❌ Filtering out past slot: ${slot.startTime} (buffer: ${bufferTimeString})`);
+          }
+          return isFuture;
+        });
+        
         console.log(`📅 After filtering past slots: ${availableSlots.length} slots available`);
+        if (availableSlots.length > 0) {
+          console.log(`🕐 Remaining slot times: ${availableSlots.map(s => s.startTime).join(', ')}`);
+        }
       }
       
       console.log(`✅ Found ${availableSlots.length} available slots`);
@@ -216,8 +229,11 @@ class TimeSlotService {
       const now = new Date();
       const currentTime = now.toTimeString().slice(0, 5);
       const today = now.toISOString().split('T')[0];
+      const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+      const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
       
       console.log(`🕐 Current time: ${currentTime}, Today: ${today}`);
+      console.log(`🕐 Buffer time (2 hours from now): ${bufferTimeString}`);
       
       for (let i = 0; i < 7; i++) {
         const date = new Date();
@@ -232,12 +248,12 @@ class TimeSlotService {
           console.log(`   Times (12h): ${availableSlots.map(s => s.startTimeDisplay).join(', ')}`);
           
           if (dateString === today) {
-            const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
-            const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
             const futureSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
-            console.log(`   After ${bufferTimeString} buffer: ${futureSlots.length} slots`);
-            console.log(`   Future times (24h): ${futureSlots.map(s => s.startTime).join(', ')}`);
-            console.log(`   Future times (12h): ${futureSlots.map(s => s.startTimeDisplay).join(', ')}`);
+            console.log(`   ✅ After ${bufferTimeString} buffer: ${futureSlots.length} future slots`);
+            if (futureSlots.length > 0) {
+              console.log(`   Future times (24h): ${futureSlots.map(s => s.startTime).join(', ')}`);
+              console.log(`   Future times (12h): ${futureSlots.map(s => s.startTimeDisplay).join(', ')}`);
+            }
           }
         } else {
           console.log(`📅 ${dateString} (${i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : `Day ${i+1}`}): No slots available`);
@@ -256,8 +272,9 @@ class TimeSlotService {
     try {
       const now = new Date();
       const today = now.toISOString().split('T')[0];
+      const currentTime = now.toTimeString().slice(0, 5);
       
-      console.log(`🕐 Current time: ${now.toTimeString().slice(0, 5)}, Today: ${today}`);
+      console.log(`🕐 Current time: ${currentTime}, Today: ${today}`);
       
       for (let i = 0; i < 14; i++) { // Check next 14 days
         const date = new Date();
@@ -267,11 +284,30 @@ class TimeSlotService {
         const availableSlots = await this.getAvailableSlots(psychologistId, dateString);
         
         if (availableSlots.length > 0) {
-          console.log(`✅ Found ${availableSlots.length} slots for ${dateString} at: ${availableSlots[0].startTime}`);
-          return {
-            date: dateString,
-            slots: availableSlots
-          };
+          // Double-check: ensure we're not returning past slots
+          const validSlots = availableSlots.filter(slot => {
+            if (dateString === today) {
+              const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+              const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
+              const isValid = slot.startTime > bufferTimeString;
+              if (!isValid) {
+                console.log(`⚠️ Double-check: Filtering out past slot ${slot.startTime} (buffer: ${bufferTimeString})`);
+              }
+              return isValid;
+            }
+            return true; // For future dates, all slots are valid
+          });
+          
+          if (validSlots.length > 0) {
+            console.log(`✅ Found ${validSlots.length} valid slots for ${dateString}`);
+            console.log(`🕐 First slot: ${validSlots[0].startTimeDisplay} (${validSlots[0].startTime})`);
+            return {
+              date: dateString,
+              slots: validSlots
+            };
+          } else {
+            console.log(`⚠️ All slots for ${dateString} were filtered out as past slots`);
+          }
         }
       }
       
