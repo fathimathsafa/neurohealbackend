@@ -139,7 +139,7 @@ class TimeSlotService {
       
       // If it's today, filter out past time slots and add buffer time
       const now = new Date();
-      const today = now.toISOString().split('T')[0];
+      const today = now.toLocaleDateString('en-CA'); // Use local date in YYYY-MM-DD format
       
       if (date === today) {
         const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
@@ -175,6 +175,9 @@ class TimeSlotService {
         console.log(`📅 After filtering past slots: ${availableSlots.length} slots available`);
         if (availableSlots.length > 0) {
           console.log(`🕐 Remaining slot times: ${availableSlots.map(s => s.startTime).join(', ')}`);
+          console.log(`🕐 Remaining slot times (12h): ${availableSlots.map(s => s.startTimeDisplay).join(', ')}`);
+        } else {
+          console.log(`⚠️ No future slots available after filtering`);
         }
       }
       
@@ -292,7 +295,7 @@ class TimeSlotService {
   static async getNextAvailableSlot(psychologistId) {
     try {
       const now = new Date();
-      const today = now.toISOString().split('T')[0];
+      const today = now.toLocaleDateString('en-CA'); // Use local date in YYYY-MM-DD format
       const currentTime = now.toTimeString().slice(0, 5);
       
       console.log(`🕐 Current time: ${currentTime}, Today: ${today}`);
@@ -300,7 +303,7 @@ class TimeSlotService {
       for (let i = 0; i < 14; i++) { // Check next 14 days
         const date = new Date();
         date.setDate(date.getDate() + i);
-        const dateString = date.toISOString().split('T')[0];
+        const dateString = date.toLocaleDateString('en-CA'); // Use local date format
         
         const availableSlots = await this.getAvailableSlots(psychologistId, dateString);
         

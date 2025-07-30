@@ -543,3 +543,62 @@ exports.createAutomaticBooking = async (req, res) => {
     });
   }
 };
+
+// GET /api/questions/debug-time-slots - Debug endpoint for time slot logic
+exports.debugTimeSlots = async (req, res) => {
+  try {
+    console.log("🔍 Debug time slots endpoint called");
+    
+    const { psychologistId } = req.query;
+    
+    if (!psychologistId) {
+      return res.status(400).json({ error: "Psychologist ID is required" });
+    }
+    
+    const TimeSlotService = require('../../services/time_slot_service');
+    
+    // Get current time info
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 5);
+    
+    console.log(`🕐 DEBUG: Current time: ${now.toTimeString()}`);
+    console.log(`🕐 DEBUG: Current date: ${today}`);
+    console.log(`🕐 DEBUG: Timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+    
+    // Get available slots for today
+    const availableSlots = await TimeSlotService.getAvailableSlots(psychologistId, today);
+    
+    // Get next available slot
+    const nextSlot = await TimeSlotService.getNextAvailableSlot(psychologistId);
+    
+    res.status(200).json({
+      currentTime: {
+        full: now.toTimeString(),
+        hhmm: currentTime,
+        date: today,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timezoneOffset: now.getTimezoneOffset()
+      },
+      availableSlotsToday: availableSlots.map(slot => ({
+        time24: slot.startTime,
+        time12: slot.startTimeDisplay,
+        date: slot.date
+      })),
+      nextAvailableSlot: nextSlot ? {
+        date: nextSlot.date,
+        slots: nextSlot.slots.map(slot => ({
+          time24: slot.startTime,
+          time12: slot.startTimeDisplay
+        }))
+      } : null
+    });
+    
+  } catch (error) {
+    console.error("❌ Debug time slots error:", error);
+    res.status(500).json({ 
+      error: "Failed to debug time slots", 
+      details: error.message 
+    });
+  }
+};
