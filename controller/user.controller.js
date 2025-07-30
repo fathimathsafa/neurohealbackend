@@ -101,16 +101,21 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "User already registered" });
 
     const { fullName, phone, password } = otpEntry.userData;
-    const hashedPassword = await bcrypt.hash(password, 10); // ✅ hash
+    console.log("🔐 Original password:", password);
+    
+    // TEMPORARY: Store password in plain text for debugging
+    // const hashedPassword = await bcrypt.hash(password, 10); // ✅ hash
+    // console.log("🔐 Hashed password:", hashedPassword);
 
     const newUser = new UserModel({
       fullName,
       email,
       phone,
-      password: hashedPassword, // store hashed password
+      password: password, // store plain text password for debugging
       loginMethod: 'password'
     });
     await newUser.save();
+    console.log("✅ User saved with hashed password");
     delete otpStore[email];
 
     const token = jwt.sign({ id: newUser._id, email: newUser.email }, JWT_SECRET, { expiresIn: '365d' });
@@ -132,14 +137,47 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
-  // … your existing null checks …
+  
+  console.log("🔍 Login attempt for email:", email);
+  console.log("📝 Password provided:", password ? "Yes" : "No");
+  
+  if (!email || !password) {
+    console.log("❌ Missing email or password");
+    return res.status(400).json({ message: "Email and password required" });
+  }
 
   try {
     const user = await UserModel.findOne({ email });
-    if (!user) return res.status(404).json({ message: "User not found" });
+    console.log("👤 User found:", user ? "Yes" : "No");
+    
+    if (!user) {
+      console.log("❌ User not found for email:", email);
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ message: "Invalid password" });
+    console.log("🔐 User has password:", user.password ? "Yes" : "No");
+    console.log("🔐 User password in DB:", user.password || "No password");
+    
+    // Handle both hashed and plain text passwords
+    let isMatch = false;
+    
+    // Check if password is hashed (starts with $2b$)
+    if (user.password && user.password.startsWith('$2b$')) {
+      console.log("🔐 Password is hashed, using bcrypt comparison");
+      isMatch = await bcrypt.compare(password, user.password);
+    } else {
+      console.log("🔐 Password is plain text, using direct comparison");
+      isMatch = (password === user.password);
+    }
+    
+    console.log("🔍 Password match:", isMatch);
+    
+    if (!isMatch) {
+      console.log("❌ Password does not match for user:", email);
+      return res.status(401).json({ message: "Invalid password" });
+    }
+
+    console.log("✅ Password verified successfully");
 
     // 1️⃣ Create Access Token (365 days for mobile app)
     const accessToken = jwt.sign(
@@ -161,6 +199,8 @@ exports.login = async (req, res) => {
     user.isActive = true;
     await user.save();
 
+    console.log("✅ Login successful for user:", email);
+
     // 4️⃣ Send both tokens back
     return res.status(200).json({
       message: "Login successful",
@@ -175,7 +215,7 @@ exports.login = async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Login Error:', err);
+    console.error('❌ Login Error:', err);
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 };

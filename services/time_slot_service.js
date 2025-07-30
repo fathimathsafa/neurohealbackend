@@ -153,10 +153,22 @@ class TimeSlotService {
         
         // Filter out slots that are in the past (including buffer time)
         availableSlots = availableSlots.filter(slot => {
-          const isFuture = slot.startTime > bufferTimeString;
+          // Convert slot time to minutes for proper comparison
+          const [slotHour, slotMinute] = slot.startTime.split(':').map(Number);
+          const slotMinutes = slotHour * 60 + slotMinute;
+          
+          // Convert buffer time to minutes
+          const [bufferHour, bufferMinute] = bufferTimeString.split(':').map(Number);
+          const bufferMinutes = bufferHour * 60 + bufferMinute;
+          
+          const isFuture = slotMinutes > bufferMinutes;
+          
           if (!isFuture) {
-            console.log(`❌ Filtering out past slot: ${slot.startTime} (buffer: ${bufferTimeString})`);
+            console.log(`❌ Filtering out past slot: ${slot.startTime} (${slotMinutes} min) vs buffer: ${bufferTimeString} (${bufferMinutes} min)`);
+          } else {
+            console.log(`✅ Keeping future slot: ${slot.startTime} (${slotMinutes} min) vs buffer: ${bufferTimeString} (${bufferMinutes} min)`);
           }
+          
           return isFuture;
         });
         
@@ -248,7 +260,16 @@ class TimeSlotService {
           console.log(`   Times (12h): ${availableSlots.map(s => s.startTimeDisplay).join(', ')}`);
           
           if (dateString === today) {
-            const futureSlots = availableSlots.filter(slot => slot.startTime > bufferTimeString);
+            // Use proper time comparison for debug output
+            const futureSlots = availableSlots.filter(slot => {
+              const [slotHour, slotMinute] = slot.startTime.split(':').map(Number);
+              const slotMinutes = slotHour * 60 + slotMinute;
+              
+              const [bufferHour, bufferMinute] = bufferTimeString.split(':').map(Number);
+              const bufferMinutes = bufferHour * 60 + bufferMinute;
+              
+              return slotMinutes > bufferMinutes;
+            });
             console.log(`   ✅ After ${bufferTimeString} buffer: ${futureSlots.length} future slots`);
             if (futureSlots.length > 0) {
               console.log(`   Future times (24h): ${futureSlots.map(s => s.startTime).join(', ')}`);
@@ -289,10 +310,23 @@ class TimeSlotService {
             if (dateString === today) {
               const bufferTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
               const bufferTimeString = bufferTime.toTimeString().slice(0, 5);
-              const isValid = slot.startTime > bufferTimeString;
+              
+              // Convert slot time to minutes for proper comparison
+              const [slotHour, slotMinute] = slot.startTime.split(':').map(Number);
+              const slotMinutes = slotHour * 60 + slotMinute;
+              
+              // Convert buffer time to minutes
+              const [bufferHour, bufferMinute] = bufferTimeString.split(':').map(Number);
+              const bufferMinutes = bufferHour * 60 + bufferMinute;
+              
+              const isValid = slotMinutes > bufferMinutes;
+              
               if (!isValid) {
-                console.log(`⚠️ Double-check: Filtering out past slot ${slot.startTime} (buffer: ${bufferTimeString})`);
+                console.log(`⚠️ Double-check: Filtering out past slot ${slot.startTime} (${slotMinutes} min) vs buffer: ${bufferTimeString} (${bufferMinutes} min)`);
+              } else {
+                console.log(`✅ Double-check: Valid future slot ${slot.startTime} (${slotMinutes} min) vs buffer: ${bufferTimeString} (${bufferMinutes} min)`);
               }
+              
               return isValid;
             }
             return true; // For future dates, all slots are valid
