@@ -377,6 +377,22 @@ exports.checkBookingAvailability = async (req, res) => {
         req
       );
 
+      // Get available time slots for the psychologist
+      const TimeSlotService = require('../../services/time_slot_service');
+      const nextAvailableSlot = await TimeSlotService.getNextAvailableSlot(matchResult.psychologist._id);
+      
+      let availableSlots = [];
+      let nextSlotInfo = null;
+      
+      if (nextAvailableSlot && nextAvailableSlot.slots.length > 0) {
+        availableSlots = nextAvailableSlot.slots.slice(0, 5); // Show first 5 available slots
+        nextSlotInfo = {
+          date: nextAvailableSlot.date,
+          time: nextAvailableSlot.slots[0].startTime,
+          timeDisplay: nextAvailableSlot.slots[0].startTimeDisplay
+        };
+      }
+
       return res.status(200).json({
         canBook: true,
         message: "Automatic booking is available!",
@@ -392,6 +408,13 @@ exports.checkBookingAvailability = async (req, res) => {
           hourlyRate: psychologistDetails.hourlyRate,
           description: psychologistDetails.description || "Experienced psychologist"
         },
+        nextAvailableSlot: nextSlotInfo,
+        availableSlots: availableSlots.map(slot => ({
+          date: slot.date,
+          time: slot.startTime,
+          timeDisplay: slot.startTimeDisplay,
+          dayName: slot.dayName
+        })),
         matchType: matchResult.matchType,
         estimatedTime: "Within 24-48 hours"
       });
